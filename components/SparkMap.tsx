@@ -18,6 +18,7 @@ import SavedLayersRenderer from "./map/SavedLayersRenderer";
 
 import GarduModal from "./modals/GarduModal";
 import SchoorModal from "./modals/SchoorModal";
+import KonstruksiModal from "./modals/KonstruksiModal";
 
 import SearchBar from "./sidebar/SearchBar";
 import ComponentPalette from "./sidebar/ComponentPalette";
@@ -63,6 +64,35 @@ function computeJtmTypeForIndex(layer: NetworkLayer, idx: number): string {
   return getJtmConstruction(layer.poles, idx);
 }
 
+// Hitung tipe konstruksi otomatis (short) untuk sembarang layer tersimpan
+function computeKonstruksiShort(layer: NetworkLayer, idx: number): string {
+  const { jenisJaringan, poles } = layer;
+  const isLast = idx === poles.length - 1;
+  let angle = 0;
+  if (idx > 0 && idx < poles.length - 1) {
+    const b1 = turf.bearing(turf.point([poles[idx-1][1], poles[idx-1][0]]), turf.point([poles[idx][1], poles[idx][0]]));
+    const b2 = turf.bearing(turf.point([poles[idx][1], poles[idx][0]]), turf.point([poles[idx+1][1], poles[idx+1][0]]));
+    let diff = Math.abs(b2 - b1); if (diff > 180) diff = 360 - diff; angle = diff;
+  }
+  if (jenisJaringan.includes("SUTM")) return getJtmConstruction(poles, idx);
+  if (jenisJaringan.includes("SKUTR") || jenisJaringan.includes("Underbuild")) {
+    if (idx === 0) return "FDE";
+    if (isLast) return "BDL+DE";
+    if (angle > 15) return "LA";
+    return "S";
+  }
+  if (jenisJaringan === "SKUTM") {
+    if (idx === 0 || isLast) return "Trm";
+    if (angle > 75) return "2xTrm";
+    if (angle > 5) return "LA";
+    return "S";
+  }
+  if (jenisJaringan === "SKTM" || jenisJaringan === "SKTR") {
+    return idx === 0 || isLast ? "TRM" : "JNT";
+  }
+  return "";
+}
+
 export default function SparkMap() {
   // ─── Core state ───────────────────────────────────────────────────────────
   const mapRef = useRef<L.Map | null>(null);
@@ -76,8 +106,7 @@ export default function SparkMap() {
   const [isEdited, setIsEdited] = useState(false);
 
   // ─── Edit modes ───────────────────────────────────────────────────────────
-  // editMode can be null, "insert", "delete", "gardu", "schoor"
-  const [editMode, setEditMode] = useState<"insert" | "delete" | "gardu" | "schoor" | null>(null);
+  const [editMode, setEditMode] = useState<"insert" | "delete" | "gardu" | "schoor" | "konstruksi" | null>(null);
 
   // ─── Gardu state ──────────────────────────────────────────────────────────
   const [gardus, setGardus] = useState<Record<number, GarduConfig>>({});
@@ -88,6 +117,11 @@ export default function SparkMap() {
   const [schoors, setSchoors] = useState<Record<number, SchoorConfig>>({});
   const [selectedSchoorIdx, setSelectedSchoorIdx] = useState<number | null>(null);
   const [tempSchoor, setTempSchoor] = useState<SchoorConfig>({ jenis: "Treck" });
+
+  // ─── Konstruksi override state ────────────────────────────────────────────
+  const [konstruksiOverrides, setKonstruksiOverrides] = useState<Record<number, string>>({});
+  const [selectedKonstruksiIdx, setSelectedKonstruksiIdx] = useState<number | null>(null);
+  const [selectedKonstruksiSaved, setSelectedKonstruksiSaved] = useState<{ layerId: number; poleIdx: number } | null>(null);
 
   // ─── Auto schoor ──────────────────────────────────────────────────────────
   const [autoSchoor, setAutoSchoor] = useState(false);
@@ -514,6 +548,10 @@ export default function SparkMap() {
   };
   const handleSavedPoleEdit = useCallback((layerId: number, poleIdx: number, mode: string) => {
     if (!highlightedLayerIds.has(layerId)) return;
+    if (mode === "konstruksi") {
+      setSelectedKonstruksiSaved({ layerId, poleIdx });
+      return;
+    }
     setSavedLayers(prev => prev.map(l => {
       if (l.id !== layerId) return l;
       let newL = { ...l };
@@ -739,6 +777,7 @@ export default function SparkMap() {
       id, label, poles: [...poles], line: [...line],
       jenisJaringan, statusJaringan, offsetSide, jarakGawang, tinggiTiang, materialTiang,
       gardus: { ...gardus }, schoors: { ...schoors },
+      konstruksiOverrides: { ...konstruksiOverrides },
       autoSchoor, autoSchoorThreshold, autoSchoorJenis,
     };
     setSavedLayers(prev => [...prev.filter(l => l.id !== id), layer]);
@@ -793,7 +832,7 @@ export default function SparkMap() {
       setStartPos(null); setEndPos(null); setSnapStart(null); setSnapEnd(null); setMode(null);
     }
     setHistory([]); setPoles([]); setLine([]); setRawRoute(null); setIsEdited(false);
-    setGardus({}); setSchoors({}); setEditMode(null); setActiveEditLayerId(null);
+    setGardus({}); setSchoors({}); setKonstruksiOverrides({}); setEditMode(null); setActiveEditLayerId(null);
     setAutoSchoor(false); setRoutingMode("jalan"); setSaveName("");
   };
 
@@ -807,6 +846,7 @@ export default function SparkMap() {
     setOffsetSide(layer.offsetSide); setJarakGawang(layer.jarakGawang);
     setTinggiTiang(layer.tinggiTiang); setMaterialTiang(layer.materialTiang);
     setGardus(layer.gardus); setSchoors(layer.schoors);
+    setKonstruksiOverrides(layer.konstruksiOverrides ?? {});
     setAutoSchoor(layer.autoSchoor); setAutoSchoorThreshold(layer.autoSchoorThreshold);
     setAutoSchoorJenis(layer.autoSchoorJenis);
     // ← Pertahankan nama asli layer di input saveName agar tidak diganti default saat re-save
@@ -855,6 +895,7 @@ export default function SparkMap() {
     let mergedPoles: [number, number][] = [...ordered[0].poles];
     const mergedGardus: Record<number, GarduConfig> = { ...ordered[0].gardus };
     const mergedSchoors: Record<number, SchoorConfig> = { ...ordered[0].schoors };
+    const mergedKonstruksiOverrides: Record<number, string> = { ...(ordered[0].konstruksiOverrides ?? {}) };
     let offset = ordered[0].poles.length;
 
     for (let i = 1; i < ordered.length; i++) {
@@ -873,6 +914,10 @@ export default function SparkMap() {
         const ki = Number(k);
         if (ki >= skip) mergedSchoors[idxOffset + ki] = v;
       }
+      for (const [k, v] of Object.entries(layer.konstruksiOverrides ?? {})) {
+        const ki = Number(k);
+        if (ki >= skip) mergedKonstruksiOverrides[idxOffset + ki] = v;
+      }
       mergedPoles = [...mergedPoles, ...polesToAdd];
       offset += polesToAdd.length;
     }
@@ -885,6 +930,7 @@ export default function SparkMap() {
       offsetSide: first.offsetSide, jarakGawang: first.jarakGawang,
       tinggiTiang: first.tinggiTiang, materialTiang: first.materialTiang,
       gardus: mergedGardus, schoors: mergedSchoors,
+      konstruksiOverrides: mergedKonstruksiOverrides,
       autoSchoor: first.autoSchoor, autoSchoorThreshold: first.autoSchoorThreshold,
       autoSchoorJenis: first.autoSchoorJenis,
     };
@@ -906,6 +952,7 @@ export default function SparkMap() {
     setOffsetSide(merged.offsetSide); setJarakGawang(merged.jarakGawang);
     setTinggiTiang(merged.tinggiTiang); setMaterialTiang(merged.materialTiang);
     setGardus(merged.gardus); setSchoors(merged.schoors);
+    setKonstruksiOverrides(merged.konstruksiOverrides ?? {});
     setAutoSchoor(merged.autoSchoor); setAutoSchoorThreshold(merged.autoSchoorThreshold);
     setAutoSchoorJenis(merged.autoSchoorJenis);
     setIsEdited(true); setRawRoute(null); setHistory([]);
@@ -915,9 +962,9 @@ export default function SparkMap() {
   }, [savedLayers, junctions]);
 
   // ─── Edit mode toggles ────────────────────────────────────────────────────
-  const toggleEditMode = (selectedMode: "insert" | "delete" | "gardu" | "schoor") => {
+  const toggleEditMode = (selectedMode: "insert" | "delete" | "gardu" | "schoor" | "konstruksi") => {
     setMode(null); setEditMode(editMode === selectedMode ? null : selectedMode);
-    setSelectedGarduIdx(null); setSelectedSchoorIdx(null);
+    setSelectedGarduIdx(null); setSelectedSchoorIdx(null); setSelectedKonstruksiIdx(null);
   };
 
   const activatePalette = (type: "schoor" | "gardu", subtype: string) => {
@@ -1009,6 +1056,14 @@ export default function SparkMap() {
         else if (angle > 5) { skutmTypeShort = "LA"; skutmTypeLong = `LA (Belok ${angle.toFixed(1)}°)`; }
         else { skutmTypeShort = "S"; skutmTypeLong = "Suspension (S)"; }
       }
+    }
+    // Terapkan override konstruksi jika ada
+    const override = konstruksiOverrides[idx];
+    if (override) {
+      if (jenisJaringan.includes("SUTM")) { jtmTypeShort = override; jtmTypeLong = override; }
+      else if (jenisJaringan.includes("SKUTR") || jenisJaringan.includes("Underbuild")) { jtrTypeShort = override; jtrTypeLong = override; }
+      else if (jenisJaringan === "SKUTM") { skutmTypeShort = override; skutmTypeLong = override; }
+      else if (jenisJaringan === "SKTM" || jenisJaringan === "SKTR") { kabelTypeShort = override; kabelTypeLong = override; }
     }
     return { jtrTypeShort, jtrTypeLong, jtmTypeShort, jtmTypeLong, kabelTypeShort, kabelTypeLong, skutmTypeShort, skutmTypeLong, isGrounded: false, angle };
   });
@@ -1124,6 +1179,61 @@ export default function SparkMap() {
           />
         )}
 
+        {/* Modal edit konstruksi — active layer */}
+        {selectedKonstruksiIdx !== null && (() => {
+          const pd = poleData[selectedKonstruksiIdx];
+          if (!pd) return null;
+          const computedShort = pd.jtmTypeShort || pd.jtrTypeShort || pd.skutmTypeShort || pd.kabelTypeShort;
+          const computedLong = pd.jtmTypeLong || pd.jtrTypeLong || pd.skutmTypeLong || pd.kabelTypeLong;
+          if (!computedShort) return null;
+          return (
+            <KonstruksiModal
+              jenisJaringan={jenisJaringan}
+              computedShort={computedShort}
+              computedLong={computedLong}
+              overrideValue={konstruksiOverrides[selectedKonstruksiIdx]}
+              onSave={(val) => {
+                commitHistory();
+                setKonstruksiOverrides(prev => {
+                  const next = { ...prev };
+                  if (val === undefined) delete next[selectedKonstruksiIdx];
+                  else next[selectedKonstruksiIdx] = val;
+                  return next;
+                });
+                setSelectedKonstruksiIdx(null);
+              }}
+              onClose={() => setSelectedKonstruksiIdx(null)}
+            />
+          );
+        })()}
+
+        {/* Modal edit konstruksi — saved layer */}
+        {selectedKonstruksiSaved !== null && (() => {
+          const layer = savedLayers.find(l => l.id === selectedKonstruksiSaved.layerId);
+          if (!layer) return null;
+          const computedShort = computeKonstruksiShort(layer, selectedKonstruksiSaved.poleIdx);
+          if (!computedShort) return null;
+          return (
+            <KonstruksiModal
+              jenisJaringan={layer.jenisJaringan}
+              computedShort={computedShort}
+              computedLong={computedShort}
+              overrideValue={(layer.konstruksiOverrides ?? {})[selectedKonstruksiSaved.poleIdx]}
+              onSave={(val) => {
+                setSavedLayers(prev => prev.map(l => {
+                  if (l.id !== selectedKonstruksiSaved.layerId) return l;
+                  const overrides = { ...(l.konstruksiOverrides ?? {}) };
+                  if (val === undefined) delete overrides[selectedKonstruksiSaved.poleIdx];
+                  else overrides[selectedKonstruksiSaved.poleIdx] = val;
+                  return { ...l, konstruksiOverrides: overrides };
+                }));
+                setSelectedKonstruksiSaved(null);
+              }}
+              onClose={() => setSelectedKonstruksiSaved(null)}
+            />
+          );
+        })()}
+
         {/* ─── Indikator mode sambung aktif (Tugas 1) ─────────────────────── */}
         {/* Banner mengambang di bawah search bar saat user sedang memilih titik koneksi */}
         {connectMode && (
@@ -1186,6 +1296,7 @@ export default function SparkMap() {
             highlightedLayerIds={highlightedLayerIds}
             editMode={editMode}
             onPoleEdit={handleSavedPoleEdit}
+            onEditKonstruksi={(layerId, poleIdx) => setSelectedKonstruksiSaved({ layerId, poleIdx })}
           />
 
           {/* Active network lines */}
@@ -1385,6 +1496,8 @@ export default function SparkMap() {
                       } else if (editMode === "schoor") {
                         if (schoors[idx]) setSelectedSchoorIdx(idx);
                         else { commitHistory(); setSchoors(prev => ({ ...prev, [idx]: { jenis: paletteSchoorJenis, rotation: bisectorOutwardAngle } })); }
+                      } else if (editMode === "konstruksi") {
+                        setSelectedKonstruksiIdx(idx);
                       }
                     },
                     dragend: (e) => {

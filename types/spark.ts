@@ -22,6 +22,7 @@ export type NetworkLayer = {
   materialTiang: string;
   gardus: Record<number, GarduConfig>;
   schoors: Record<number, SchoorConfig>;
+  konstruksiOverrides: Record<number, string>;
   autoSchoor: boolean;
   autoSchoorThreshold: number;
   autoSchoorJenis: SchoorConfig["jenis"];

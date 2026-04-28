@@ -33,8 +33,9 @@ interface Props {
   didDragRef: React.MutableRefObject<boolean>;
   /** Layer IDs yang di-highlight saat mode group-edit aktif */
   highlightedLayerIds: Set<number>;
-  editMode?: "insert" | "delete" | "gardu" | "schoor" | null;
+  editMode?: "insert" | "delete" | "gardu" | "schoor" | "konstruksi" | null;
   onPoleEdit?: (layerId: number, poleIdx: number, mode: string) => void;
+  onEditKonstruksi?: (layerId: number, poleIdx: number) => void;
 }
 
 // ─── Tipe data untuk state rotasi aktif ──────────────────────────────────────
@@ -71,7 +72,7 @@ export default function SavedLayersRenderer({
   startPos, endPos, snapStart, snapEnd, onLoadLayerForEdit,
   onConnected, onUpdateSchoorRotation, onUpdateSavedPole, onCreateJunction, poles,
   dragSource, dragSnapTarget, startDragConn, didDragRef,
-  highlightedLayerIds, editMode, onPoleEdit
+  highlightedLayerIds, editMode, onPoleEdit, onEditKonstruksi
 }: Props) {
   const map = useMap();
   const mapContainerRef = useRef<HTMLElement | null>(null);
@@ -340,6 +341,14 @@ export default function SavedLayersRenderer({
                 else if (angle > 30) jtmType = "2xA3";
                 else if (angle >= 10) jtmType = "A2";
                 else jtmType = "A1";
+              }
+
+              // Terapkan override konstruksi jika ada
+              const konstruksiOverride = (layer.konstruksiOverrides ?? {})[idx];
+              if (konstruksiOverride) {
+                if (layer.jenisJaringan.includes("SUTM")) jtmType = konstruksiOverride;
+                else if (layer.jenisJaringan.includes("SKUTR") || layer.jenisJaringan.includes("Underbuild")) jtrType = konstruksiOverride;
+                else if (layer.jenisJaringan === "SKUTM") skutmType = konstruksiOverride;
               }
               
               // Hitung konstruksi gabungan untuk junction host
@@ -614,6 +623,22 @@ export default function SavedLayersRenderer({
                             <span className="text-gray-500">Jumlah titik</span>
                             <span className="font-semibold">{layer.poles.length} {isKT ? "titik" : "tiang"}</span>
                           </div>
+                          {/* Konstruksi tiang */}
+                          {(jtmType || jtrType || skutmType || isKT) && (() => {
+                            const ktDisplay = konstruksiOverride && isKT ? konstruksiOverride : (isTerminasi ? "TRM" : "JNT");
+                            const display = jtmType || jtrType || skutmType || ktDisplay;
+                            return (
+                              <div className="flex justify-between items-center border-t border-gray-200 mt-0.5 pt-0.5">
+                                <span className="text-gray-500">Konstruksi</span>
+                                <span className="font-bold text-orange-700 flex items-center gap-1">
+                                  {display}
+                                  {konstruksiOverride && (
+                                    <span className="bg-orange-100 text-orange-700 text-[8px] px-1 rounded-full border border-orange-300">✏️</span>
+                                  )}
+                                </span>
+                              </div>
+                            );
+                          })()}
                         </div>
 
                         {/* Schoor info */}
@@ -630,13 +655,21 @@ export default function SavedLayersRenderer({
                         <div className="bg-blue-50 border border-blue-100 rounded px-2 py-1 text-[10px] text-blue-600 mb-1.5">
                           🖱️ Drag tiang untuk geser posisi
                         </div>
-                        <div className="flex justify-center">
+                        <div className="flex gap-1.5 justify-center">
                           <button
                             onClick={() => onLoadLayerForEdit(layer)}
                             className="text-[11px] bg-blue-600 text-white px-3 py-1 rounded-full font-bold hover:bg-blue-700"
                           >
                             ✏️ Edit Layer
                           </button>
+                          {onEditKonstruksi && (jtmType || jtrType || skutmType || isKT) && (
+                            <button
+                              onClick={() => onEditKonstruksi(layer.id, idx)}
+                              className="text-[11px] bg-orange-500 text-white px-3 py-1 rounded-full font-bold hover:bg-orange-600"
+                            >
+                              ✏️ Konstruksi
+                            </button>
+                          )}
                         </div>
                       </div>
                     </Popup>

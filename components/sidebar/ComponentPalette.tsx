@@ -24,7 +24,7 @@ interface Props {
   setConnectFirst: (v: ConnectFirstState) => void;
   // Handlers
   activatePalette: (type: "schoor" | "gardu", subtype: string) => void;
-  toggleEditMode: (mode: "insert" | "delete" | "gardu" | "schoor") => void;
+  toggleEditMode: (mode: "insert" | "delete" | "gardu" | "schoor" | "konstruksi") => void;
   handleUndo: () => void;
   historyLength: number;
   highlightedLayerIds: Set<number>;
@@ -148,6 +148,24 @@ export default function ComponentPalette({
           )}
         </div>
       )}
+
+      {/* Edit Konstruksi */}
+      <div className="mb-3">
+        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1.5">Konstruksi Tiang</p>
+        <button
+          onClick={() => toggleEditMode("konstruksi")}
+          className={`w-full p-2.5 text-xs rounded-lg font-bold border transition-all ${editMode === "konstruksi" ? "bg-orange-600 text-white ring-2 ring-orange-300 border-orange-600" : "bg-white border-gray-300 text-gray-700 hover:bg-orange-50 hover:border-orange-300"}`}
+        >
+          ⚙️ Edit Konstruksi
+        </button>
+        {editMode === "konstruksi" && (
+          <div className="mt-1.5 bg-white border border-orange-200 rounded p-2">
+            <p className="text-[10px] text-orange-700 font-semibold">
+              👆 Klik tiang untuk ganti tipe konstruksi (A1, A2, A3, dll)
+            </p>
+          </div>
+        )}
+      </div>
 
       {/* Edit Tiang */}
       <div className="pt-3 border-t border-indigo-200">
