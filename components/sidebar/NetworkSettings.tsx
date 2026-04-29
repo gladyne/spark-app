@@ -1,10 +1,10 @@
 "use client";
 
 const CONDUCTOR: Record<string, { tipe: string; ukuran: number[] }> = {
-  "SUTM":                          { tipe: "AACS",       ukuran: [70, 150, 240] },
-  "SUTM + SKUTR":                  { tipe: "AACS",       ukuran: [70, 150, 240] },
-  "SUTM Underbuild (2 Jaringan)":  { tipe: "AACS",       ukuran: [70, 150, 240] },
-  "SUTM Underbuild (3 Jaringan)":  { tipe: "AACS",       ukuran: [70, 150, 240] },
+  "SUTM":                          { tipe: "AAACS",       ukuran: [70, 150, 240] },
+  "SUTM + SKUTR":                  { tipe: "AAACS",       ukuran: [70, 150, 240] },
+  "SUTM Underbuild (2 Jaringan)":  { tipe: "AAACS",       ukuran: [70, 150, 240] },
+  "SUTM Underbuild (3 Jaringan)":  { tipe: "AAACS",       ukuran: [70, 150, 240] },
   "SKUTM":                         { tipe: "NFA2XSY-T",  ukuran: [70, 150, 240] },
   "SKTM":                          { tipe: "NA2XSEBY",   ukuran: [70, 150, 240] },
   "SKUTR":                         { tipe: "NFA2X",      ukuran: [70] },
@@ -35,7 +35,7 @@ export default function NetworkSettings({
   materialTiang, setMaterialTiang, offsetSide, setOffsetSide, isKabelTanah,
   kondukturUkuran, setKondukturUkuran,
 }: Props) {
-  const conductor = CONDUCTOR[jenisJaringan] ?? { tipe: "AACS", ukuran: [70, 150, 240] };
+  const conductor = CONDUCTOR[jenisJaringan] ?? { tipe: "AAACS", ukuran: [70, 150, 240] };
 
   return (
     <div className="border border-gray-200 p-4 rounded-xl bg-gray-50">

@@ -15,8 +15,8 @@ export interface LayerStat {
 }
 
 const CONDUCTOR_TIPE: Record<string, string> = {
-  "SUTM": "AACS", "SUTM + SKUTR": "AACS",
-  "SUTM Underbuild (2 Jaringan)": "AACS", "SUTM Underbuild (3 Jaringan)": "AACS",
+  "SUTM": "AAACS", "SUTM + SKUTR": "AAACS",
+  "SUTM Underbuild (2 Jaringan)": "AAACS", "SUTM Underbuild (3 Jaringan)": "AAACS",
   "SKUTM": "NFA2XSY-T", "SKTM": "NA2XSEBY",
   "SKUTR": "NFA2X", "SKTR": "NFA2X",
 };
@@ -345,7 +345,7 @@ export default function RekapModal({
                   { label: "Material", value: materialTiang },
                   { label: "Jarak Gawang", value: `${jarakGawang} m` },
                   { label: "Status", value: statusJaringan },
-                  { label: "Konduktor", value: `${CONDUCTOR_TIPE[jenisJaringan] ?? "AACS"} ${kondukturUkuran} mm²` },
+                  { label: "Konduktor", value: `${CONDUCTOR_TIPE[jenisJaringan] ?? "AAACS"} ${kondukturUkuran} mm²` },
                 ].map(({ label, value }) => (
                   <div key={label} className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5">
                     <p className="text-[10px] text-gray-400 font-semibold">{label}</p>
