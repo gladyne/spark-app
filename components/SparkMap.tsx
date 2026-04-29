@@ -1753,15 +1753,18 @@ export default function SparkMap() {
           />
         )}
 
-        {poles.length > 0 && (
-          <button
-            onClick={() => setRekapOpen(true)}
-            className="w-full py-2.5 px-4 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 transition-all shadow-md
-              bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 hover:shadow-lg active:scale-[0.98]"
-          >
-            <span>📋</span> Rekap Konstruksi Gambar
-          </button>
-        )}
+        <button
+          onClick={() => setRekapOpen(true)}
+          disabled={poles.length === 0}
+          className={`w-full py-2.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-md
+            ${poles.length > 0
+              ? "text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 hover:shadow-lg active:scale-[0.98]"
+              : "text-gray-400 bg-gray-100 border border-gray-200 cursor-not-allowed shadow-none"
+            }`}
+        >
+          <span>📋</span> Rekap Konstruksi Gambar
+          {poles.length === 0 && <span className="text-[10px] font-normal">(belum ada tiang)</span>}
+        </button>
 
         <NetworkSettings
           jenisJaringan={jenisJaringan} setJenisJaringan={setJenisJaringan}
