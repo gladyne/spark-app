@@ -1,20 +1,17 @@
 "use client";
-import type { SchoorConfig } from "../../types/spark";
 
 interface Props {
   autoSchoor: boolean;
   setAutoSchoor: (v: boolean) => void;
   autoSchoorThreshold: number;
   setAutoSchoorThreshold: (v: number) => void;
-  autoSchoorJenis: SchoorConfig["jenis"];
-  setAutoSchoorJenis: (v: SchoorConfig["jenis"]) => void;
   autoSchoorCount: number;
   polesLength: number;
 }
 
 export default function AutoSchoorCard({
   autoSchoor, setAutoSchoor, autoSchoorThreshold, setAutoSchoorThreshold,
-  autoSchoorJenis, setAutoSchoorJenis, autoSchoorCount, polesLength,
+  autoSchoorCount, polesLength,
 }: Props) {
   return (
     <div className="border-2 border-emerald-300 p-4 rounded-xl bg-emerald-50">
@@ -48,17 +45,10 @@ export default function AutoSchoorCard({
               <span>5° (Ketat)</span><span>30° (Sedang)</span><span>60° (Longgar)</span>
             </div>
           </div>
-          <div>
-            <label className="text-[11px] text-gray-600 font-semibold block mb-1">Jenis Schoor Default:</label>
-            <select className="w-full p-2 border border-emerald-300 rounded-lg bg-white text-sm outline-none focus:ring-2 focus:ring-emerald-400"
-              value={autoSchoorJenis} onChange={e => setAutoSchoorJenis(e.target.value as SchoorConfig["jenis"])}>
-              <option value="Treck">Treck Schoor (Kawat Tarik Keluar)</option>
-              <option value="Druck">Druck Schoor (Tiang Dorong ke Dalam)</option>
-              <option value="Kontramast">Kontramast (Tiang Jangkar Seberang)</option>
-            </select>
-          </div>
           <div className="bg-white border border-emerald-200 rounded-lg p-2.5 text-[11px] text-emerald-800 leading-relaxed">
             💡 Tiang dengan sudut belok ≥ <strong>{autoSchoorThreshold}°</strong> otomatis diberi schoor.<br/>
+            <strong>Belok kanan</strong> (searah jarum jam) → <span className="text-red-600 font-bold">Treck Schoor</span><br/>
+            <strong>Belok kiri</strong> (berlawanan jarum jam) → <span className="text-blue-600 font-bold">Druck Schoor</span><br/>
             Set manual tetap bisa dilakukan dan akan <strong>override</strong> auto.<br/>
             Schoor auto tampil <span className="opacity-60">lebih transparan</span> di peta.
           </div>

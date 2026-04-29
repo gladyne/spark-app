@@ -25,7 +25,7 @@ export type NetworkLayer = {
   konstruksiOverrides: Record<number, string>;
   autoSchoor: boolean;
   autoSchoorThreshold: number;
-  autoSchoorJenis: SchoorConfig["jenis"];
+  autoSchoorJenis?: SchoorConfig["jenis"];
 };
 
 export type HistoryState = {
@@ -52,6 +52,7 @@ export type PoleData = {
   skutmTypeLong: string;
   isGrounded: boolean;
   angle: number;
+  turnSign: number;  // +1 = kanan/Treck, -1 = kiri/Druck, 0 = lurus/endpoint
 };
 
 // Informasi snap titik awal/akhir ke jaringan tersimpan.

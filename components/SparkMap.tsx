@@ -136,7 +136,7 @@ export default function SparkMap() {
   const [autoSchoor, setAutoSchoor] = useState(false);
   const [routingMode, setRoutingMode] = useState<"jalan" | "lurus">("jalan");
   const [autoSchoorThreshold, setAutoSchoorThreshold] = useState(15);
-  const [autoSchoorJenis, setAutoSchoorJenis] = useState<SchoorConfig["jenis"]>("Treck");
+
 
   // ─── ETAP-style palette ───────────────────────────────────────────────────
   const [paletteSchoorJenis, setPaletteSchoorJenis] = useState<SchoorConfig["jenis"]>("Treck");
@@ -864,7 +864,7 @@ export default function SparkMap() {
       jenisJaringan, statusJaringan, offsetSide, jarakGawang, tinggiTiang, materialTiang,
       gardus: { ...gardus }, schoors: { ...schoors },
       konstruksiOverrides: { ...konstruksiOverrides },
-      autoSchoor, autoSchoorThreshold, autoSchoorJenis,
+      autoSchoor, autoSchoorThreshold,
     };
     setSavedLayers(prev => [...prev.filter(l => l.id !== id), layer]);
     if (activeEditLayerId === null) setLayerCounter(c => c + 1);
@@ -942,7 +942,6 @@ export default function SparkMap() {
     setGardus(layer.gardus); setSchoors(layer.schoors);
     setKonstruksiOverrides(layer.konstruksiOverrides ?? {});
     setAutoSchoor(layer.autoSchoor); setAutoSchoorThreshold(layer.autoSchoorThreshold);
-    setAutoSchoorJenis(layer.autoSchoorJenis);
     setSaveName(layer.label);
     setIsEdited(true); setRawRoute(null);
     setActiveEditLayerId(layer.id);
@@ -1026,7 +1025,6 @@ export default function SparkMap() {
       gardus: mergedGardus, schoors: mergedSchoors,
       konstruksiOverrides: mergedKonstruksiOverrides,
       autoSchoor: first.autoSchoor, autoSchoorThreshold: first.autoSchoorThreshold,
-      autoSchoorJenis: first.autoSchoorJenis,
     };
 
     // Konfirmasi
@@ -1048,7 +1046,6 @@ export default function SparkMap() {
     setGardus(merged.gardus); setSchoors(merged.schoors);
     setKonstruksiOverrides(merged.konstruksiOverrides ?? {});
     setAutoSchoor(merged.autoSchoor); setAutoSchoorThreshold(merged.autoSchoorThreshold);
-    setAutoSchoorJenis(merged.autoSchoorJenis);
     setIsEdited(true); setRawRoute(null);
     setActiveEditLayerId(merged.id);
     setSaveName(merged.label);
@@ -1110,13 +1107,17 @@ export default function SparkMap() {
   const poleData = poles.map((pos, idx) => {
     const isLast = idx === poles.length - 1;
     const ptCurrent = turf.point([pos[1], pos[0]]);
-    let maxSpan = 0; let angle = 0;
+    let maxSpan = 0; let angle = 0; let turnSign = 0;
     if (idx < poles.length - 1) maxSpan = Math.max(maxSpan, turf.distance(ptCurrent, turf.point([poles[idx + 1][1], poles[idx + 1][0]]), { units: "meters" }));
     if (idx > 0) maxSpan = Math.max(maxSpan, turf.distance(ptCurrent, turf.point([poles[idx - 1][1], poles[idx - 1][0]]), { units: "meters" }));
     if (idx > 0 && idx < poles.length - 1) {
       const b1 = turf.bearing(turf.point([poles[idx - 1][1], poles[idx - 1][0]]), ptCurrent);
       const b2 = turf.bearing(ptCurrent, turf.point([poles[idx + 1][1], poles[idx + 1][0]]));
-      let diff = Math.abs(b2 - b1); if (diff > 180) diff = 360 - diff; angle = diff;
+      let raw = b2 - b1;
+      if (raw > 180) raw -= 360;
+      else if (raw <= -180) raw += 360;
+      angle = Math.abs(raw);
+      turnSign = raw > 0 ? 1 : raw < 0 ? -1 : 0;
     }
     let jtrTypeShort = ""; let jtrTypeLong = "";
     if (jenisJaringan.includes("SKUTR") || jenisJaringan.includes("Underbuild")) {
@@ -1164,7 +1165,7 @@ export default function SparkMap() {
       else if (jenisJaringan === "SKUTM") { skutmTypeShort = override; skutmTypeLong = override; }
       else if (jenisJaringan === "SKTM" || jenisJaringan === "SKTR") { kabelTypeShort = override; kabelTypeLong = override; }
     }
-    return { jtrTypeShort, jtrTypeLong, jtmTypeShort, jtmTypeLong, kabelTypeShort, kabelTypeLong, skutmTypeShort, skutmTypeLong, isGrounded: false, angle };
+    return { jtrTypeShort, jtrTypeLong, jtmTypeShort, jtmTypeLong, kabelTypeShort, kabelTypeLong, skutmTypeShort, skutmTypeLong, isGrounded: false, angle, turnSign };
   });
 
   // Grounding logic
@@ -1192,7 +1193,10 @@ export default function SparkMap() {
   if (autoSchoor && poles.length > 2) {
     poleData.forEach((pd, idx) => {
       const isEndpoint = idx === 0 || idx === poles.length - 1;
-      if (!isEndpoint && pd.angle >= autoSchoorThreshold && !schoors[idx]) effectiveSchoors[idx] = { jenis: autoSchoorJenis };
+      if (!isEndpoint && pd.angle >= autoSchoorThreshold && !schoors[idx]) {
+        const autoJenis: SchoorConfig["jenis"] = pd.turnSign >= 0 ? "Treck" : "Druck";
+        effectiveSchoors[idx] = { jenis: autoJenis };
+      }
     });
   }
   const autoSchoorCount = autoSchoor
@@ -1731,7 +1735,6 @@ export default function SparkMap() {
           <AutoSchoorCard
             autoSchoor={autoSchoor} setAutoSchoor={setAutoSchoor}
             autoSchoorThreshold={autoSchoorThreshold} setAutoSchoorThreshold={setAutoSchoorThreshold}
-            autoSchoorJenis={autoSchoorJenis} setAutoSchoorJenis={setAutoSchoorJenis}
             autoSchoorCount={autoSchoorCount} polesLength={poles.length}
           />
         )}
