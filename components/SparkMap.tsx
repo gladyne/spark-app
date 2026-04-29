@@ -9,6 +9,7 @@ import * as turf from "@turf/turf";
 import { useSearch } from "../hooks/useSearch";
 import type { GarduConfig, SchoorConfig, NetworkLayer, Connection, SnapInfo, ConnectFirstState, JunctionInfo, DragSource, DragTarget } from "../types/spark";
 import { haversineMeters } from "../lib/geo";
+import { countPoleTypes } from "../lib/computePoleData";
 import { buildGarduSvg, buildSchoorSvg } from "../lib/svgUtils";
 
 import MapClickHandler from "./map/MapClickHandler";
@@ -1102,8 +1103,9 @@ export default function SparkMap() {
     }
   }
 
-  const activeJunctionHostIdxs = new Set(
-    junctions.filter(j => j.hostLayerId === ACTIVE_LAYER_ID).map(j => j.hostPoleIdx)
+  // Tiang di layer aktif yang merupakan titik sambung (branch) ke layer lain — mendapat A3 Branch
+  const activeBranchIdxs = new Set(
+    junctions.filter(j => j.branchLayerId === ACTIVE_LAYER_ID).map(j => j.branchPoleIdx)
   );
 
   const poleData = poles.map((pos, idx) => {
@@ -1131,7 +1133,7 @@ export default function SparkMap() {
     let jtmTypeShort = ""; let jtmTypeLong = "";
     if (jenisJaringan.includes("SUTM")) {
       jtmTypeLong = "A1 (Lurus)"; jtmTypeShort = "A1";
-      if (activeJunctionHostIdxs.has(idx)) { jtmTypeLong = "A3 Branch (Tiang Cabang)"; jtmTypeShort = "A3 Branch"; }
+      if (activeBranchIdxs.has(idx)) { jtmTypeLong = "A3 Branch (Tiang Cabang)"; jtmTypeShort = "A3 Branch"; }
       else if (idx === 0 || isLast) { jtmTypeLong = "A3 Pole (Tiang Ujung)"; jtmTypeShort = "A3 Pole"; }
       else {
         if (angle > 30) { jtmTypeLong = `2xA3 (Belok ${angle.toFixed(1)}°)`; jtmTypeShort = "2xA3"; }
@@ -1207,21 +1209,28 @@ export default function SparkMap() {
   const totalLengthM = line.length > 1
     ? turf.length(turf.lineString(line.map(p => [p[1], p[0]])), { units: "kilometers" }) * 1000
     : 0;
-  const savedLayerStats: LayerStat[] = savedLayers.map(l => ({
-    id: l.id, label: l.label,
-    jenisJaringan: l.jenisJaringan, statusJaringan: l.statusJaringan,
-    polesCount: l.poles.length,
-    lengthM: l.line.length > 1
-      ? turf.length(turf.lineString(l.line.map(p => [p[1], p[0]])), { units: "kilometers" }) * 1000
-      : 0,
-    schoors: {
-      treck: Object.values(l.schoors).filter(s => s.jenis === "Treck").length,
-      druck: Object.values(l.schoors).filter(s => s.jenis === "Druck").length,
-      kontramast: Object.values(l.schoors).filter(s => s.jenis === "Kontramast").length,
-      total: Object.keys(l.schoors).length,
-    },
-    garduCount: Object.keys(l.gardus).length,
-  }));
+  const savedLayerStats: LayerStat[] = savedLayers.map(l => {
+    // Tiang di layer ini yang merupakan titik sambung (branch) — mendapat A3 Branch
+    const layerJunctionBranchIdxs = new Set(
+      junctions.filter(j => j.branchLayerId === l.id).map(j => j.branchPoleIdx)
+    );
+    return {
+      id: l.id, label: l.label,
+      jenisJaringan: l.jenisJaringan, statusJaringan: l.statusJaringan,
+      polesCount: l.poles.length,
+      lengthM: l.line.length > 1
+        ? turf.length(turf.lineString(l.line.map(p => [p[1], p[0]])), { units: "kilometers" }) * 1000
+        : 0,
+      schoors: {
+        treck: Object.values(l.schoors).filter(s => s.jenis === "Treck").length,
+        druck: Object.values(l.schoors).filter(s => s.jenis === "Druck").length,
+        kontramast: Object.values(l.schoors).filter(s => s.jenis === "Kontramast").length,
+        total: Object.keys(l.schoors).length,
+      },
+      garduCount: Object.keys(l.gardus).length,
+      konstruksiTypes: countPoleTypes(l.poles, l.jenisJaringan, l.konstruksiOverrides ?? {}, layerJunctionBranchIdxs),
+    };
+  });
 
   // ─── Line color / style ───────────────────────────────────────────────────
   let lineColor = "red"; let lineColor2: string | null = null; let lineColor3: string | null = null;
