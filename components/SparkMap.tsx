@@ -22,6 +22,7 @@ import KonstruksiModal from "./modals/KonstruksiModal";
 
 import SearchBar from "./sidebar/SearchBar";
 import ComponentPalette from "./sidebar/ComponentPalette";
+import UndoRedoPanel from "./sidebar/UndoRedoPanel";
 import AutoSchoorCard from "./sidebar/AutoSchoorCard";
 import NetworkSettings from "./sidebar/NetworkSettings";
 import TentikanTitikCard from "./sidebar/TentikanTitikCard";
@@ -93,6 +94,14 @@ function computeKonstruksiShort(layer: NetworkLayer, idx: number): string {
   return "";
 }
 
+type HistorySnapshot = {
+  description: string;
+  poles: [number,number][]; line: [number,number][];
+  gardus: Record<number,GarduConfig>; schoors: Record<number,SchoorConfig>;
+  konstruksiOverrides: Record<number,string>;
+  savedLayers: NetworkLayer[]; junctions: JunctionInfo[];
+};
+
 export default function SparkMap() {
   // ─── Core state ───────────────────────────────────────────────────────────
   const mapRef = useRef<L.Map | null>(null);
@@ -160,7 +169,9 @@ export default function SparkMap() {
   const [highlightedLayerIds, setHighlightedLayerIds] = useState<Set<number>>(new Set());
 
   // ─── History ──────────────────────────────────────────────────────────────
-  const [history, setHistory] = useState<{ poles: [number,number][]; line: [number,number][]; gardus: Record<number,GarduConfig>; schoors: Record<number,SchoorConfig> }[]>([]);
+  const [history, setHistory] = useState<HistorySnapshot[]>([]);
+  const [redoStack, setRedoStack] = useState<HistorySnapshot[]>([]);
+  const [undoLogOpen, setUndoLogOpen] = useState(false);
 
   // ─── Drag-to-connect state ────────────────────────────────────────────────
   const [dragSource, setDragSource] = useState<DragSource | null>(null);
@@ -195,14 +206,46 @@ export default function SparkMap() {
     pendingDragConnRef.current = null;
   }, []);
 
-  const commitHistory = () => {
-    setHistory(prev => [...prev, { poles: [...poles], line: [...line], gardus: { ...gardus }, schoors: { ...schoors } }].slice(-20));
+  const captureSnapshot = (description: string): HistorySnapshot => ({
+    description,
+    poles: [...poles], line: [...line],
+    gardus: { ...gardus }, schoors: { ...schoors },
+    konstruksiOverrides: { ...konstruksiOverrides },
+    savedLayers: savedLayers.map(l => ({ ...l, poles: [...l.poles], line: [...l.line], gardus: { ...l.gardus }, schoors: { ...l.schoors }, konstruksiOverrides: { ...(l.konstruksiOverrides ?? {}) } })),
+    junctions: [...junctions],
+  });
+  const commitHistory = (desc: string) => {
+    setHistory(prev => [...prev, captureSnapshot(desc)].slice(-30));
+    setRedoStack([]);
+  };
+  const restoreSnapshot = (snap: HistorySnapshot) => {
+    setPoles(snap.poles); setLine(snap.line);
+    setGardus(snap.gardus); setSchoors(snap.schoors);
+    setKonstruksiOverrides(snap.konstruksiOverrides);
+    setSavedLayers(snap.savedLayers); setJunctions(snap.junctions);
   };
   const handleUndo = () => {
     if (history.length === 0) return;
     const last = history[history.length - 1];
+    setRedoStack(prev => [...prev, captureSnapshot(last.description)].slice(-30));
     setHistory(prev => prev.slice(0, -1));
-    setPoles(last.poles); setLine(last.line); setGardus(last.gardus); setSchoors(last.schoors);
+    restoreSnapshot(last);
+  };
+  const handleRedo = () => {
+    if (redoStack.length === 0) return;
+    const next = redoStack[redoStack.length - 1];
+    setHistory(prev => [...prev, captureSnapshot(next.description)].slice(-30));
+    setRedoStack(prev => prev.slice(0, -1));
+    restoreSnapshot(next);
+  };
+  const handleJumpTo = (historyIdx: number) => {
+    const target = history[historyIdx];
+    if (!target) return;
+    const current = captureSnapshot(target.description);
+    // Semua entry setelah historyIdx jadi redo stack (urutan: terlama dulu)
+    setRedoStack([current, ...history.slice(historyIdx + 1).reverse()].slice(-30));
+    setHistory(history.slice(0, historyIdx));
+    restoreSnapshot(target);
   };
 
   // ─── Callback: dua jaringan berhasil disambung ────────────────────────────
@@ -266,7 +309,7 @@ export default function SparkMap() {
 
     // Override koordinat branch ke koordinat host yang sama persis
     if (branchLayerId === ACTIVE_LAYER_ID) {
-      commitHistory(); setIsEdited(true);
+      commitHistory("Sambung junction"); setIsEdited(true);
       const np = [...poles]; np[branchPoleIdx] = [hostCoord[0], hostCoord[1]];
       setPoles(np); setLine(np);
     } else {
@@ -386,6 +429,21 @@ export default function SparkMap() {
         err => console.warn("User menolak lokasi", err.message)
       );
     }
+  }, []);
+
+  // ─── Keyboard shortcuts: Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z ─────────────────
+  const undoRef = useRef(handleUndo);
+  const redoRef = useRef(handleRedo);
+  undoRef.current = handleUndo;
+  redoRef.current = handleRedo;
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.ctrlKey && !e.shiftKey && e.key === "z") { e.preventDefault(); undoRef.current(); }
+      if (e.ctrlKey && (e.key === "y" || (e.shiftKey && e.key === "z"))) { e.preventDefault(); redoRef.current(); }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
   // ─── Spatial snap: dua fase ───────────────────────────────────────────────
@@ -532,12 +590,34 @@ export default function SparkMap() {
 
   // ─── Pole editing ─────────────────────────────────────────────────────────
   const handlePoleDrag = (idx: number, newLatLng: [number, number]) => {
-    commitHistory(); setIsEdited(true);
-    const np = [...poles]; np[idx] = newLatLng; setPoles(np); setLine(np);
+    const ptDragged = turf.point([newLatLng[1], newLatLng[0]]);
+    let snapTarget: { layerId: number; label: string; poleIdx: number; coord: [number, number] } | null = null;
+
+    for (const l of savedLayers) {
+      for (let i = 0; i < l.poles.length; i++) {
+        const p = l.poles[i];
+        const dist = turf.distance(ptDragged, turf.point([p[1], p[0]]), { units: "meters" });
+        if (dist < 5) {
+          const alreadyConnected = junctions.some(j =>
+            (j.hostLayerId === l.id && j.hostPoleIdx === i && j.branchLayerId === ACTIVE_LAYER_ID && j.branchPoleIdx === idx) ||
+            (j.hostLayerId === ACTIVE_LAYER_ID && j.hostPoleIdx === idx && j.branchLayerId === l.id && j.branchPoleIdx === i)
+          );
+          if (!alreadyConnected) { snapTarget = { layerId: l.id, label: l.label, poleIdx: i, coord: p }; break; }
+        }
+      }
+      if (snapTarget) break;
+    }
+
+    if (snapTarget && window.confirm(`Sambungkan ke ujung jaringan "${snapTarget.label}"?`)) {
+      handleCreateJunction(snapTarget.layerId, snapTarget.poleIdx, ACTIVE_LAYER_ID, idx);
+    } else {
+      commitHistory("Geser tiang"); setIsEdited(true);
+      const np = [...poles]; np[idx] = newLatLng; setPoles(np); setLine(np);
+    }
   };
 
   const handleDeletePole = (idx: number) => {
-    commitHistory(); setIsEdited(true);
+    commitHistory(`Hapus tiang #${idx + 1}`); setIsEdited(true);
     const np = [...poles]; np.splice(idx, 1); setPoles(np); setLine(np);
     const ng = { ...gardus }; delete ng[idx];
     for (let i = idx + 1; i <= poles.length; i++) { if (ng[i]) { ng[i - 1] = ng[i]; delete ng[i]; } }
@@ -546,12 +626,14 @@ export default function SparkMap() {
     for (let i = idx + 1; i <= poles.length; i++) { if (ns[i]) { ns[i - 1] = ns[i]; delete ns[i]; } }
     setSchoors(ns);
   };
-  const handleSavedPoleEdit = useCallback((layerId: number, poleIdx: number, mode: string) => {
+  const handleSavedPoleEdit = (layerId: number, poleIdx: number, mode: string) => {
     if (!highlightedLayerIds.has(layerId)) return;
     if (mode === "konstruksi") {
       setSelectedKonstruksiSaved({ layerId, poleIdx });
       return;
     }
+    const modeLabel: Record<string, string> = { delete: "Hapus tiang tersimpan", gardu: "Edit gardu tersimpan", schoor: "Edit schoor tersimpan" };
+    commitHistory(modeLabel[mode] ?? "Edit tiang tersimpan");
     setSavedLayers(prev => prev.map(l => {
       if (l.id !== layerId) return l;
       let newL = { ...l };
@@ -594,7 +676,7 @@ export default function SparkMap() {
       }
       return newL;
     }));
-  }, [highlightedLayerIds, paletteGarduJenis, paletteGarduTrafo, paletteSchoorJenis]);
+  };
 
   const handleMapClickForInsert = (latlng: any) => {
     let minDist = Infinity; let targetIdx = -1; let targetType: "active" | "saved" = "active"; let targetLayerId = -1;
@@ -617,7 +699,7 @@ export default function SparkMap() {
 
     if (targetIdx !== -1 && minDist < 20) {
       if (targetType === "active") {
-        commitHistory();
+        commitHistory("Sisip tiang");
         setIsEdited(true);
         const np = [...poles]; np.splice(targetIdx, 0, [latlng.lat, latlng.lng]); setPoles(np); setLine(np);
         const ng = { ...gardus };
@@ -627,6 +709,7 @@ export default function SparkMap() {
         for (let i = poles.length - 1; i >= targetIdx; i--) { if (ns[i]) { ns[i + 1] = ns[i]; delete ns[i]; } }
         setSchoors(ns);
       } else if (targetType === "saved") {
+        commitHistory("Sisip tiang tersimpan");
         setSavedLayers(prev => prev.map(l => {
           if (l.id !== targetLayerId) return l;
           const np = [...l.poles]; np.splice(targetIdx, 0, [latlng.lat, latlng.lng]);
@@ -668,7 +751,7 @@ export default function SparkMap() {
 
   const handleClear = () => {
     if (savedLayers.length > 0 && !window.confirm(`Reset semua? ${savedLayers.length} layer jaringan akan dihapus.`)) return;
-    setHistory([]); setStartPos(null); setEndPos(null); setPoles([]); setLine([]);
+    setHistory([]); setRedoStack([]); setStartPos(null); setEndPos(null); setPoles([]); setLine([]);
     setRawRoute(null); setIsEdited(false); setGardus({}); setSchoors({});
     setMode(null); setEditMode(null); setAutoSchoor(false); setRoutingMode("jalan");
     setSavedLayers([]); setLayerCounter(1); setActiveEditLayerId(null);
@@ -678,6 +761,8 @@ export default function SparkMap() {
 
   // ─── Hapus layer + bersihkan junction yang terkait ───────────────────────
   const handleDeleteLayer = (id: number) => {
+    const layerLabel = savedLayers.find(l => l.id === id)?.label ?? "layer";
+    commitHistory(`Hapus layer "${layerLabel}"`);
     setSavedLayers(prev => prev.filter(l => l.id !== id));
     setJunctions(prev => prev.filter(j => j.hostLayerId !== id && j.branchLayerId !== id));
   };
@@ -762,6 +847,7 @@ export default function SparkMap() {
   // ─── Layer management ─────────────────────────────────────────────────────
   const saveCurrentAsLayer = (continueFromEnd = false) => {
     if (poles.length === 0) { alert("Belum ada jaringan yang di-generate!"); return; }
+    commitHistory(activeEditLayerId !== null ? `Update layer "${saveName || jenisJaringan}"` : `Simpan layer baru`);
     // Gunakan saveName jika diisi, pastikan unique dengan index jika nama sudah ada
     const defaultLabel = `${jenisJaringan} ${statusJaringan} #${layerCounter}`;
     let label = saveName.trim() || defaultLabel;
@@ -782,6 +868,13 @@ export default function SparkMap() {
     };
     setSavedLayers(prev => [...prev.filter(l => l.id !== id), layer]);
     if (activeEditLayerId === null) setLayerCounter(c => c + 1);
+
+    // Remap junctions yang masih referensi ACTIVE_LAYER_ID ke real layer id
+    setJunctions(prev => prev.map(j => {
+      if (j.branchLayerId === ACTIVE_LAYER_ID) return { ...j, branchLayerId: id };
+      if (j.hostLayerId === ACTIVE_LAYER_ID) return { ...j, hostLayerId: id };
+      return j;
+    }));
 
     // Auto-junction: snap titik awal (branch pole idx 0)
     if (snapStart && !snapStart.isMidLine && snapStart.poleIdx !== undefined) {
@@ -831,7 +924,7 @@ export default function SparkMap() {
     } else {
       setStartPos(null); setEndPos(null); setSnapStart(null); setSnapEnd(null); setMode(null);
     }
-    setHistory([]); setPoles([]); setLine([]); setRawRoute(null); setIsEdited(false);
+    setPoles([]); setLine([]); setRawRoute(null); setIsEdited(false);
     setGardus({}); setSchoors({}); setKonstruksiOverrides({}); setEditMode(null); setActiveEditLayerId(null);
     setAutoSchoor(false); setRoutingMode("jalan"); setSaveName("");
   };
@@ -841,6 +934,7 @@ export default function SparkMap() {
       if (!window.confirm("Jaringan draft aktif akan disimpan dulu. Lanjutkan?")) return;
       saveCurrentAsLayer();
     }
+    commitHistory(`Edit layer "${layer.label}"`);
     setPoles(layer.poles); setLine(layer.line);
     setJenisJaringan(layer.jenisJaringan); setStatusJaringan(layer.statusJaringan);
     setOffsetSide(layer.offsetSide); setJarakGawang(layer.jarakGawang);
@@ -849,9 +943,8 @@ export default function SparkMap() {
     setKonstruksiOverrides(layer.konstruksiOverrides ?? {});
     setAutoSchoor(layer.autoSchoor); setAutoSchoorThreshold(layer.autoSchoorThreshold);
     setAutoSchoorJenis(layer.autoSchoorJenis);
-    // ← Pertahankan nama asli layer di input saveName agar tidak diganti default saat re-save
     setSaveName(layer.label);
-    setIsEdited(true); setRawRoute(null); setHistory([]);
+    setIsEdited(true); setRawRoute(null);
     setActiveEditLayerId(layer.id);
     setSavedLayers(prev => prev.filter(l => l.id !== layer.id));
     if (layer.poles.length > 0) setFlyTarget(layer.poles[0]);
@@ -863,6 +956,7 @@ export default function SparkMap() {
       .map(id => savedLayers.find(l => l.id === id))
       .filter((l): l is NetworkLayer => !!l);
     if (groupLayers.length < 2) return;
+    commitHistory(`Gabung layer "${groupName}"`);
 
     const groupJunctions = junctions.filter(
       j => groupLayerIds.includes(j.hostLayerId) && groupLayerIds.includes(j.branchLayerId)
@@ -955,7 +1049,7 @@ export default function SparkMap() {
     setKonstruksiOverrides(merged.konstruksiOverrides ?? {});
     setAutoSchoor(merged.autoSchoor); setAutoSchoorThreshold(merged.autoSchoorThreshold);
     setAutoSchoorJenis(merged.autoSchoorJenis);
-    setIsEdited(true); setRawRoute(null); setHistory([]);
+    setIsEdited(true); setRawRoute(null);
     setActiveEditLayerId(merged.id);
     setSaveName(merged.label);
     if (merged.poles.length > 0) setFlyTarget(merged.poles[0]);
@@ -987,16 +1081,16 @@ export default function SparkMap() {
   };
 
   const saveGardu = () => {
-    if (selectedGarduIdx !== null) { commitHistory(); setGardus(prev => ({ ...prev, [selectedGarduIdx]: tempGardu })); setSelectedGarduIdx(null); }
+    if (selectedGarduIdx !== null) { commitHistory(`Pasang gardu ${tempGardu.jenis}`); setGardus(prev => ({ ...prev, [selectedGarduIdx]: tempGardu })); setSelectedGarduIdx(null); }
   };
   const removeGardu = () => {
-    if (selectedGarduIdx !== null) { commitHistory(); const ng = { ...gardus }; delete ng[selectedGarduIdx]; setGardus(ng); setSelectedGarduIdx(null); }
+    if (selectedGarduIdx !== null) { commitHistory("Hapus gardu"); const ng = { ...gardus }; delete ng[selectedGarduIdx]; setGardus(ng); setSelectedGarduIdx(null); }
   };
   const saveSchoor = () => {
-    if (selectedSchoorIdx !== null) { commitHistory(); setSchoors(prev => ({ ...prev, [selectedSchoorIdx]: tempSchoor })); setSelectedSchoorIdx(null); }
+    if (selectedSchoorIdx !== null) { commitHistory(`Pasang schoor ${tempSchoor.jenis}`); setSchoors(prev => ({ ...prev, [selectedSchoorIdx]: tempSchoor })); setSelectedSchoorIdx(null); }
   };
   const removeSchoor = () => {
-    if (selectedSchoorIdx !== null) { commitHistory(); const ns = { ...schoors }; delete ns[selectedSchoorIdx]; setSchoors(ns); setSelectedSchoorIdx(null); }
+    if (selectedSchoorIdx !== null) { commitHistory("Hapus schoor"); const ns = { ...schoors }; delete ns[selectedSchoorIdx]; setSchoors(ns); setSelectedSchoorIdx(null); }
   };
 
   // ─── Computed pole data ───────────────────────────────────────────────────
@@ -1008,6 +1102,10 @@ export default function SparkMap() {
       skutmCumDists[i] = skutmCumDists[i - 1] + haversineMeters(poles[i-1][0], poles[i-1][1], poles[i][0], poles[i][1]);
     }
   }
+
+  const activeJunctionHostIdxs = new Set(
+    junctions.filter(j => j.hostLayerId === ACTIVE_LAYER_ID).map(j => j.hostPoleIdx)
+  );
 
   const poleData = poles.map((pos, idx) => {
     const isLast = idx === poles.length - 1;
@@ -1030,7 +1128,8 @@ export default function SparkMap() {
     let jtmTypeShort = ""; let jtmTypeLong = "";
     if (jenisJaringan.includes("SUTM")) {
       jtmTypeLong = "A1 (Lurus)"; jtmTypeShort = "A1";
-      if (idx === 0 || isLast) { jtmTypeLong = "A3 (Tiang Ujung)"; jtmTypeShort = "A3"; }
+      if (activeJunctionHostIdxs.has(idx)) { jtmTypeLong = "A3 Branch (Tiang Cabang)"; jtmTypeShort = "A3 Branch"; }
+      else if (idx === 0 || isLast) { jtmTypeLong = "A3 Pole (Tiang Ujung)"; jtmTypeShort = "A3 Pole"; }
       else {
         if (angle > 30) { jtmTypeLong = `2xA3 (Belok ${angle.toFixed(1)}°)`; jtmTypeShort = "2xA3"; }
         else if (angle >= 10 && angle <= 30) { jtmTypeLong = `A2 (Belok ${angle.toFixed(1)}°)`; jtmTypeShort = "A2"; }
@@ -1193,7 +1292,7 @@ export default function SparkMap() {
               computedLong={computedLong}
               overrideValue={konstruksiOverrides[selectedKonstruksiIdx]}
               onSave={(val) => {
-                commitHistory();
+                commitHistory(`Edit konstruksi tiang #${selectedKonstruksiIdx + 1}`);
                 setKonstruksiOverrides(prev => {
                   const next = { ...prev };
                   if (val === undefined) delete next[selectedKonstruksiIdx];
@@ -1220,6 +1319,7 @@ export default function SparkMap() {
               computedLong={computedShort}
               overrideValue={(layer.konstruksiOverrides ?? {})[selectedKonstruksiSaved.poleIdx]}
               onSave={(val) => {
+                commitHistory(`Edit konstruksi tiang tersimpan #${selectedKonstruksiSaved.poleIdx + 1}`);
                 setSavedLayers(prev => prev.map(l => {
                   if (l.id !== selectedKonstruksiSaved.layerId) return l;
                   const overrides = { ...(l.konstruksiOverrides ?? {}) };
@@ -1260,6 +1360,8 @@ export default function SparkMap() {
           searchFocused={searchFocused} setSearchFocused={setSearchFocused}
           activeResultIdx={activeResultIdx} setActiveResultIdx={setActiveResultIdx}
           onSelectLocation={handleSelectLocation} onKeyDown={handleSearchKeyDown}
+          canUndo={history.length > 0} canRedo={redoStack.length > 0}
+          onUndo={handleUndo} onRedo={handleRedo}
         />
 
         <MapContainer center={[-0.7893, 113.9213]} zoom={5} maxZoom={22} className="h-full w-full" ref={mapRef}>
@@ -1482,7 +1584,7 @@ export default function SparkMap() {
                         const rect = (e.originalEvent.target as HTMLElement).closest('.custom-pole-icon')!.getBoundingClientRect();
                         const cx = rect.left + rect.width / 2;
                         const cy = rect.top + rect.height / 2;
-                        commitHistory();
+                        commitHistory("Rotasi schoor");
                         setRotatingSchoor({ poleIdx: idx, cx, cy });
                         return;
                       }
@@ -1492,10 +1594,10 @@ export default function SparkMap() {
                       if (editMode === "delete") handleDeletePole(idx);
                       else if (editMode === "gardu") {
                         if (gardus[idx]) setSelectedGarduIdx(idx);
-                        else { commitHistory(); setGardus(prev => ({ ...prev, [idx]: { jenis: paletteGarduJenis, orientasi: paletteGarduOrientasi, trafo: paletteGarduTrafo } })); }
+                        else { commitHistory(`Pasang gardu ${paletteGarduJenis}`); setGardus(prev => ({ ...prev, [idx]: { jenis: paletteGarduJenis, orientasi: paletteGarduOrientasi, trafo: paletteGarduTrafo } })); }
                       } else if (editMode === "schoor") {
                         if (schoors[idx]) setSelectedSchoorIdx(idx);
-                        else { commitHistory(); setSchoors(prev => ({ ...prev, [idx]: { jenis: paletteSchoorJenis, rotation: bisectorOutwardAngle } })); }
+                        else { commitHistory(`Pasang schoor ${paletteSchoorJenis}`); setSchoors(prev => ({ ...prev, [idx]: { jenis: paletteSchoorJenis, rotation: bisectorOutwardAngle } })); }
                       } else if (editMode === "konstruksi") {
                         setSelectedKonstruksiIdx(idx);
                       }
@@ -1563,6 +1665,16 @@ export default function SparkMap() {
                             </div>
                           )}
                         </div>
+                        {(pData.jtmTypeShort || pData.jtrTypeShort || pData.skutmTypeShort || pData.kabelTypeShort) && (
+                          <div className="mt-2 flex justify-center">
+                            <button
+                              onClick={() => setSelectedKonstruksiIdx(idx)}
+                              className="text-[11px] bg-orange-500 text-white px-3 py-1 rounded-full font-bold hover:bg-orange-600"
+                            >
+                              ✏️ Konstruksi{konstruksiOverrides[idx] ? " (override)" : ""}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </Popup>
                   )}
@@ -1571,6 +1683,7 @@ export default function SparkMap() {
             );
           })}
         </MapContainer>
+
       </div>
 
       {/* SIDEBAR */}
@@ -1585,12 +1698,11 @@ export default function SparkMap() {
           paletteGarduJenis={paletteGarduJenis} paletteGarduTrafo={paletteGarduTrafo}
           setPaletteGarduTrafo={setPaletteGarduTrafo} paletteGarduOrientasi={paletteGarduOrientasi}
           setPaletteGarduOrientasi={setPaletteGarduOrientasi} trafoOptions={trafoOptions}
-          paletteSchoorJenis={paletteSchoorJenis} 
+          paletteSchoorJenis={paletteSchoorJenis}
           savedLayers={savedLayers} connections={connections} connectMode={connectMode}
           connectFirst={connectFirst} setConnections={setConnections}
           setConnectMode={setConnectMode} setConnectFirst={setConnectFirst}
           activatePalette={activatePalette} toggleEditMode={toggleEditMode}
-          handleUndo={handleUndo} historyLength={history.length}
           highlightedLayerIds={highlightedLayerIds}
         />
 
@@ -1657,6 +1769,50 @@ export default function SparkMap() {
           highlightedLayerIds={highlightedLayerIds}
           onSetHighlightedLayerIds={setHighlightedLayerIds}
         />
+
+        {/* ─── Undo / Redo ─────────────────────────────────────────────────── */}
+        <div className="border-2 border-gray-200 rounded-xl bg-gray-50 overflow-hidden">
+          <div className="flex gap-1.5 px-3 pt-3 pb-2">
+            <button onClick={handleUndo} disabled={history.length === 0} title="Undo (Ctrl+Z)"
+              className={`flex-1 py-1.5 text-xs rounded-lg font-bold border transition-all flex items-center justify-center gap-1 ${history.length > 0 ? "bg-white border-gray-300 text-gray-700 hover:bg-gray-100" : "bg-gray-100 border-gray-200 text-gray-300 cursor-not-allowed"}`}>
+              ↩ Undo {history.length > 0 && <span className="bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full text-[9px] font-bold">{history.length}</span>}
+            </button>
+            <button onClick={handleRedo} disabled={redoStack.length === 0} title="Redo (Ctrl+Y)"
+              className={`flex-1 py-1.5 text-xs rounded-lg font-bold border transition-all flex items-center justify-center gap-1 ${redoStack.length > 0 ? "bg-white border-amber-300 text-amber-700 hover:bg-amber-50" : "bg-gray-100 border-gray-200 text-gray-300 cursor-not-allowed"}`}>
+              ↪ Redo {redoStack.length > 0 && <span className="bg-amber-200 text-amber-700 px-1.5 py-0.5 rounded-full text-[9px] font-bold">{redoStack.length}</span>}
+            </button>
+            <button onClick={() => setUndoLogOpen(v => !v)} disabled={history.length === 0 && redoStack.length === 0}
+              className={`px-2.5 text-xs rounded-lg border transition-all ${history.length > 0 || redoStack.length > 0 ? "bg-white border-gray-300 text-gray-500 hover:bg-gray-100" : "bg-gray-100 border-gray-200 text-gray-300 cursor-not-allowed"}`}
+              title="Riwayat aksi">☰</button>
+          </div>
+          {undoLogOpen && (
+            <div className="border-t border-gray-200 px-3 pb-3">
+              <p className="text-[9px] text-gray-400 uppercase font-bold tracking-wider mt-2 mb-1">Riwayat — klik untuk lompat</p>
+              <div className="max-h-40 overflow-y-auto flex flex-col gap-0.5">
+                {[...redoStack].reverse().map((h, i) => (
+                  <div key={`r${i}`} className="text-[10px] px-2 py-0.5 text-amber-400 italic flex items-center gap-1 opacity-70">
+                    <span className="text-[9px]">⟳</span><span>{h.description}</span>
+                  </div>
+                ))}
+                <div className="flex items-center gap-1 py-0.5">
+                  <div className="flex-1 border-t border-blue-300" />
+                  <span className="text-[9px] text-blue-500 font-bold">sekarang</span>
+                  <div className="flex-1 border-t border-blue-300" />
+                </div>
+                {[...history].reverse().map((h, ri) => {
+                  const oi = history.length - 1 - ri;
+                  return (
+                    <button key={`h${oi}`} onClick={() => handleJumpTo(oi)}
+                      className={`text-[10px] px-2 py-0.5 rounded flex items-center gap-1 w-full text-left transition-colors ${ri === 0 ? "bg-blue-100 text-blue-700 font-semibold hover:bg-blue-200" : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"}`}>
+                      {ri === 0 && <span className="text-[9px]">▶</span>}
+                      <span className={ri === 0 ? "" : "ml-3"}>{h.description}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
 
         <ExecCard
           routingMode={routingMode} setRoutingMode={setRoutingMode}
