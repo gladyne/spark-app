@@ -1740,11 +1740,26 @@ export default function SparkMap() {
       </div>
 
       {/* SIDEBAR */}
-      <div className="w-[420px] bg-white shadow-2xl p-6 flex flex-col gap-4 z-10 overflow-y-auto">
-        <div className="border-b pb-2">
-          <h1 className="text-3xl font-extrabold text-blue-700 tracking-tight">SPARK</h1>
-          <p className="text-sm text-gray-500 font-medium">Sistem Pemetaan Pintar Rencana Kelistrikan</p>
+      <div className="w-[420px] bg-slate-50 shadow-2xl flex flex-col gap-0 z-10 overflow-y-auto">
+
+        {/* Branded header */}
+        <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900 px-6 py-5 flex-shrink-0">
+          {/* Dot pattern */}
+          <div className="absolute inset-0 opacity-[0.07]" style={{backgroundImage:"radial-gradient(circle, white 1px, transparent 1px)", backgroundSize:"20px 20px"}} />
+          {/* Glow */}
+          <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-blue-500/20 blur-2xl" />
+          <div className="relative flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/30">
+              <span className="text-white font-black text-lg tracking-tighter">S</span>
+            </div>
+            <div>
+              <h1 className="text-2xl font-black text-white tracking-tight leading-none">SPARK</h1>
+              <p className="text-blue-300 text-[10px] font-medium mt-0.5 tracking-wide">Sistem Pemetaan Pintar Rencana Kelistrikan</p>
+            </div>
+          </div>
         </div>
+
+        <div className="p-5 flex flex-col gap-4">
 
         <ComponentPalette
           poles={poles} editMode={editMode} isKabelTanah={isKabelTanah}
@@ -1760,23 +1775,21 @@ export default function SparkMap() {
         />
 
         {junctions.length > 0 && (
-          <div className="border border-purple-200 p-3 rounded-xl bg-purple-50 flex items-start gap-2">
-            <span className="text-purple-500 text-lg flex-shrink-0">⑂</span>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold text-purple-700">
-                {junctions.length} Junction Aktif
-              </p>
-              <p className="text-[10px] text-purple-500 mt-0.5">
-                Tiang tergabung secara topologis
-              </p>
+          <div className="rounded-2xl overflow-hidden shadow-sm border border-violet-200">
+            <div className="bg-gradient-to-r from-violet-600 to-purple-700 px-4 py-2.5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-white text-base">⑂</span>
+                <div>
+                  <p className="text-white font-bold text-xs">{junctions.length} Junction Aktif</p>
+                  <p className="text-violet-200 text-[10px]">Tiang tergabung secara topologis</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setJunctions([])}
+                className="w-6 h-6 rounded-full bg-white/20 hover:bg-red-400/60 text-white text-[10px] font-bold flex items-center justify-center transition-colors"
+                title="Hapus semua junction"
+              >✕</button>
             </div>
-            <button
-              onClick={() => setJunctions([])}
-              className="text-[10px] text-red-400 hover:text-red-600 font-bold flex-shrink-0"
-              title="Hapus semua junction"
-            >
-              ✕
-            </button>
           </div>
         )}
 
@@ -1791,10 +1804,10 @@ export default function SparkMap() {
         <button
           onClick={() => setRekapOpen(true)}
           disabled={poles.length === 0 && savedLayers.length === 0}
-          className={`w-full py-2.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-md
+          className={`w-full py-3 px-4 rounded-2xl font-bold text-sm flex items-center justify-center gap-2.5 transition-all
             ${poles.length > 0 || savedLayers.length > 0
-              ? "text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 hover:shadow-lg active:scale-[0.98]"
-              : "text-gray-400 bg-gray-100 border border-gray-200 cursor-not-allowed shadow-none"
+              ? "text-white bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-600 shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 active:shadow-md"
+              : "text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed"
             }`}
         >
           <span>📋</span> Rekap Konstruksi Gambar
@@ -1884,7 +1897,8 @@ export default function SparkMap() {
           routingMode={routingMode} setRoutingMode={setRoutingMode}
           isLoading={isLoading} onGenerate={handleGenerate} onClear={handleClear}
         />
-      </div>
+        </div>{/* end p-5 inner */}
+      </div>{/* end sidebar */}
     </div>
   );
 }
