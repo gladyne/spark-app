@@ -276,6 +276,7 @@ export default function SparkMap() {
   const [tinggiTiang, setTinggiTiang] = useState(12);
   const [materialTiang, setMaterialTiang] = useState("Beton");
   const [kondukturUkuran, setKondukturUkuran] = useState(70);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const trafoOptions = ["25 kVA", "50 kVA", "100 kVA", "160 kVA", "200 kVA", "250 kVA", "315 kVA", "400 kVA", "630 kVA"];
   const isKabelTanah = jenisJaringan === "SKTM" || jenisJaringan === "SKTR";
@@ -1740,7 +1741,20 @@ export default function SparkMap() {
       </div>
 
       {/* SIDEBAR */}
-      <div className="w-[420px] bg-slate-50 shadow-2xl flex flex-col gap-0 z-10 overflow-y-auto">
+      <div className={`relative flex-shrink-0 flex flex-col transition-all duration-300 ease-in-out ${sidebarOpen ? "w-[420px]" : "w-0"} bg-slate-50 shadow-2xl z-10 overflow-hidden`}>
+
+        {/* Toggle button — pinned to left edge of sidebar */}
+        <button
+          onClick={() => setSidebarOpen(v => !v)}
+          className="absolute top-1/2 -translate-y-1/2 -right-4 z-20 w-8 h-16 bg-gradient-to-b from-blue-600 to-indigo-700 rounded-r-2xl flex items-center justify-center shadow-lg shadow-blue-500/30 hover:from-blue-500 hover:to-indigo-600 transition-all active:scale-95 group"
+          title={sidebarOpen ? "Sembunyikan sidebar" : "Tampilkan sidebar"}
+        >
+          <svg className={`w-4 h-4 text-white transition-transform duration-300 ${sidebarOpen ? "" : "rotate-180"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+
+        <div className="w-[420px] flex flex-col overflow-y-auto h-full">
 
         {/* Branded header */}
         <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900 px-6 py-5 flex-shrink-0">
@@ -1898,6 +1912,7 @@ export default function SparkMap() {
           isLoading={isLoading} onGenerate={handleGenerate} onClear={handleClear}
         />
         </div>{/* end p-5 inner */}
+        </div>{/* end w-[420px] scroll */}
       </div>{/* end sidebar */}
     </div>
   );
