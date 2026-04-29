@@ -45,14 +45,20 @@ export default function NetworkSettings({
         <div className="flex-1">
           <label className="text-xs text-gray-600 font-semibold mb-1 block">Jenis:</label>
           <select className="w-full p-2 border border-gray-300 rounded-lg bg-white outline-none text-sm" value={jenisJaringan} onChange={e => setJenisJaringan(e.target.value)}>
-            <option value="SUTM">SUTM</option>
-            <option value="SKUTR">SKUTR</option>
-            <option value="SUTM + SKUTR">SUTM + SKUTR</option>
-            <option value="SUTM Underbuild (2 Jaringan)">SUTM Underbuild (2 Jaringan)</option>
-            <option value="SUTM Underbuild (3 Jaringan)">SUTM Underbuild (3 Jaringan)</option>
-            <option value="SKUTM">SKUTM</option>
-            <option value="SKTM">SKTM</option>
-            <option value="SKTR">SKTR</option>
+            <optgroup label="Tegangan Menengah">
+              <option value="SUTM">SUTM</option>
+              <option value="SKUTM">SKUTM</option>
+              <option value="SKTM">SKTM</option>
+              <option value="SUTM Underbuild (2 Jaringan)">SUTM Underbuild (2 Jaringan)</option>
+              <option value="SUTM Underbuild (3 Jaringan)">SUTM Underbuild (3 Jaringan)</option>
+            </optgroup>
+            <optgroup label="Tegangan Rendah">
+              <option value="SKUTR">SKUTR</option>
+              <option value="SKTR">SKTR</option>
+            </optgroup>
+            <optgroup label="Kolaborasi">
+              <option value="SUTM + SKUTR">SUTM + SKUTR</option>
+            </optgroup>
           </select>
         </div>
         <div className="flex-1">
