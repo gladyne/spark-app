@@ -203,7 +203,6 @@ export default function RekapModal({
                 </SectionTitle>
                 <Table
                   head={<><TH>Tipe</TH><TH>Keterangan</TH><TH right>Jumlah</TH></>}
-                  footer={<TotalRow label="Total tiang" value={`${l.polesCount} · ${formatLength(l.lengthM)}`} />}
                 >
                   {entries.map(([type, { long, count }], i) => {
                     const colorClass = KONSTRUKSI_COLOR[type] ?? "bg-gray-50 text-gray-700";
@@ -217,6 +216,22 @@ export default function RekapModal({
                       </tr>
                     );
                   })}
+                  <tr className="border-t border-gray-200 bg-gray-50/80">
+                    <td className="px-3 py-2">
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">Tiang</span>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-gray-500">{l.label}</td>
+                    <td className="px-3 py-2 text-right text-xs font-bold text-gray-800">{l.polesCount} tiang</td>
+                  </tr>
+                  <tr className="border-t border-gray-100 bg-gray-50/50">
+                    <td className="px-3 py-2">
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-sky-50 text-sky-600">{l.jenisJaringan}</span>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-gray-500">Panjang Penghantar</td>
+                    <td className="px-3 py-2 text-right text-xs font-bold text-sky-700">
+                      {l.lengthM >= 1000 ? `${(l.lengthM / 1000).toFixed(3)} km` : `${Math.round(l.lengthM)} m`}
+                    </td>
+                  </tr>
                 </Table>
               </section>
             );
