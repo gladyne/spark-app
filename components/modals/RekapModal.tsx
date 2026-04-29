@@ -10,6 +10,7 @@ export interface LayerStat {
   lengthM: number;
   schoors: { treck: number; druck: number; kontramast: number; total: number };
   garduCount: number;
+  konstruksiTypes: Record<string, { long: string; count: number }>;
 }
 
 interface Props {
@@ -98,9 +99,16 @@ export default function RekapModal({
   if (!open) return null;
 
   const hasDraft = poles.length > 0;
-  const hasSaved = savedLayerStats.length > 0;
 
-  // ─── Aggregate totals (draft + saved) ───────────────────────────────────
+  // ─── Draft stat (include konstruksiTypes dari poleData) ─────────────────
+  const draftKonstruksiTypes: Record<string, { long: string; count: number }> = {};
+  poleData.forEach(pd => {
+    const { short, long } = getTypeFields(pd, jenisJaringan);
+    const key = short || "—";
+    if (!draftKonstruksiTypes[key]) draftKonstruksiTypes[key] = { long: long || "—", count: 0 };
+    draftKonstruksiTypes[key].count++;
+  });
+
   const draftStat: LayerStat = {
     id: -1, label: "Draft Aktif",
     jenisJaringan, statusJaringan,
@@ -112,6 +120,7 @@ export default function RekapModal({
       total: Object.keys(effectiveSchoors).length,
     },
     garduCount: Object.keys(gardus).length,
+    konstruksiTypes: draftKonstruksiTypes,
   };
 
   const allStats: LayerStat[] = [...(hasDraft ? [draftStat] : []), ...savedLayerStats];
@@ -123,17 +132,8 @@ export default function RekapModal({
   const totalKontramast = allStats.reduce((s, l) => s + l.schoors.kontramast, 0);
   const totalGardu = allStats.reduce((s, l) => s + l.garduCount, 0);
 
-  // ─── Draft detail: konstruksi types ─────────────────────────────────────
   const isArrester = jenisJaringan.includes("SUTM") || jenisJaringan === "SKUTM";
   const arresterCount = poleData.filter(pd => pd.isGrounded).length;
-  const konstruksiMap: Record<string, { long: string; count: number }> = {};
-  poleData.forEach(pd => {
-    const { short, long } = getTypeFields(pd, jenisJaringan);
-    const key = short || "—";
-    if (!konstruksiMap[key]) konstruksiMap[key] = { long: long || "—", count: 0 };
-    konstruksiMap[key].count++;
-  });
-  const konstruksiEntries = Object.entries(konstruksiMap).sort((a, b) => b[1].count - a[1].count);
 
   return (
     <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4">
@@ -187,29 +187,37 @@ export default function RekapModal({
             </Table>
           </section>
 
-          {/* ─── Detail Konstruksi (draft saja) ─── */}
-          {hasDraft && konstruksiEntries.length > 0 && (
-            <section>
-              <SectionTitle>Detail Konstruksi · Draft Aktif ({jenisJaringan})</SectionTitle>
-              <Table
-                head={<><TH>Tipe</TH><TH>Keterangan</TH><TH right>Jumlah</TH></>}
-                footer={<TotalRow label="Total tiang" value={poles.length} />}
-              >
-                {konstruksiEntries.map(([type, { long, count }], i) => {
-                  const colorClass = KONSTRUKSI_COLOR[type] ?? "bg-gray-50 text-gray-700";
-                  return (
-                    <tr key={type} className={`border-t border-gray-100 ${i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}>
-                      <td className="px-3 py-2">
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${colorClass}`}>{type}</span>
-                      </td>
-                      <td className="px-3 py-2 text-xs text-gray-500 truncate max-w-[160px]">{long}</td>
-                      <TD right bold>{count}</TD>
-                    </tr>
-                  );
-                })}
-              </Table>
-            </section>
-          )}
+          {/* ─── Detail Konstruksi Per Layer ─── */}
+          {allStats.map(l => {
+            const entries = Object.entries(l.konstruksiTypes);
+            if (entries.length === 0) return null;
+            return (
+              <section key={l.id}>
+                <SectionTitle>
+                  Konstruksi · {l.label}
+                  {l.id === -1 && <span className="ml-1 normal-case text-blue-500">(draft)</span>}
+                  {" — "}{l.jenisJaringan}
+                </SectionTitle>
+                <Table
+                  head={<><TH>Tipe</TH><TH>Keterangan</TH><TH right>Jumlah</TH></>}
+                  footer={<TotalRow label="Total tiang" value={`${l.polesCount} · ${formatLength(l.lengthM)}`} />}
+                >
+                  {entries.map(([type, { long, count }], i) => {
+                    const colorClass = KONSTRUKSI_COLOR[type] ?? "bg-gray-50 text-gray-700";
+                    return (
+                      <tr key={type} className={`border-t border-gray-100 ${i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}>
+                        <td className="px-3 py-2">
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${colorClass}`}>{type}</span>
+                        </td>
+                        <td className="px-3 py-2 text-xs text-gray-500 truncate max-w-[160px]">{long}</td>
+                        <TD right bold>{count}</TD>
+                      </tr>
+                    );
+                  })}
+                </Table>
+              </section>
+            );
+          })}
 
           {/* ─── Schoor ─── */}
           <section>
