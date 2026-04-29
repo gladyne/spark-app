@@ -28,6 +28,7 @@ import NetworkSettings from "./sidebar/NetworkSettings";
 import TentikanTitikCard from "./sidebar/TentikanTitikCard";
 import LayerManager from "./sidebar/LayerManager";
 import ExecCard from "./sidebar/ExecCard";
+import RekapKonstruksi from "./sidebar/RekapKonstruksi";
 
 const DefaultIcon = L.icon({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -1117,7 +1118,7 @@ export default function SparkMap() {
       if (raw > 180) raw -= 360;
       else if (raw <= -180) raw += 360;
       angle = Math.abs(raw);
-      turnSign = raw > 0 ? 1 : raw < 0 ? -1 : 0;
+      turnSign = Math.sign(raw);
     }
     let jtrTypeShort = ""; let jtrTypeLong = "";
     if (jenisJaringan.includes("SKUTR") || jenisJaringan.includes("Underbuild")) {
@@ -1194,13 +1195,16 @@ export default function SparkMap() {
     poleData.forEach((pd, idx) => {
       const isEndpoint = idx === 0 || idx === poles.length - 1;
       if (!isEndpoint && pd.angle >= autoSchoorThreshold && !schoors[idx]) {
-        const autoJenis: SchoorConfig["jenis"] = pd.turnSign >= 0 ? "Treck" : "Druck";
+        const autoJenis: SchoorConfig["jenis"] = pd.turnSign > 0 ? "Treck" : "Druck";
         effectiveSchoors[idx] = { jenis: autoJenis };
       }
     });
   }
   const autoSchoorCount = autoSchoor
     ? poleData.filter((pd, idx) => !(idx === 0 || idx === poles.length - 1) && pd.angle >= autoSchoorThreshold && !schoors[idx]).length
+    : 0;
+  const totalLengthM = line.length > 1
+    ? turf.length(turf.lineString(line.map(p => [p[1], p[0]])), { units: "kilometers" }) * 1000
     : 0;
 
   // ─── Line color / style ───────────────────────────────────────────────────
@@ -1738,6 +1742,13 @@ export default function SparkMap() {
             autoSchoorCount={autoSchoorCount} polesLength={poles.length}
           />
         )}
+
+        <RekapKonstruksi
+          poles={poles} poleData={poleData}
+          effectiveSchoors={effectiveSchoors}
+          jenisJaringan={jenisJaringan}
+          totalLengthM={totalLengthM}
+        />
 
         <NetworkSettings
           jenisJaringan={jenisJaringan} setJenisJaringan={setJenisJaringan}
