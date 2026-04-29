@@ -26,6 +26,7 @@ export type NetworkLayer = {
   autoSchoor: boolean;
   autoSchoorThreshold: number;
   autoSchoorJenis?: SchoorConfig["jenis"];
+  kondukturUkuran?: number;
 };
 
 export type HistoryState = {

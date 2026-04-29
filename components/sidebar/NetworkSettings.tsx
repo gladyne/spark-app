@@ -1,5 +1,16 @@
 "use client";
 
+const CONDUCTOR: Record<string, { tipe: string; ukuran: number[] }> = {
+  "SUTM":                          { tipe: "AACS",       ukuran: [70, 150, 240] },
+  "SUTM + SKUTR":                  { tipe: "AACS",       ukuran: [70, 150, 240] },
+  "SUTM Underbuild (2 Jaringan)":  { tipe: "AACS",       ukuran: [70, 150, 240] },
+  "SUTM Underbuild (3 Jaringan)":  { tipe: "AACS",       ukuran: [70, 150, 240] },
+  "SKUTM":                         { tipe: "NFA2XSY-T",  ukuran: [70, 150, 240] },
+  "SKTM":                          { tipe: "NA2XSEBY",   ukuran: [70, 150, 240] },
+  "SKUTR":                         { tipe: "NFA2X",      ukuran: [70] },
+  "SKTR":                          { tipe: "NFA2X",      ukuran: [70] },
+};
+
 interface Props {
   jenisJaringan: string;
   setJenisJaringan: (v: string) => void;
@@ -14,13 +25,18 @@ interface Props {
   offsetSide: number;
   setOffsetSide: (v: number) => void;
   isKabelTanah: boolean;
+  kondukturUkuran: number;
+  setKondukturUkuran: (v: number) => void;
 }
 
 export default function NetworkSettings({
   jenisJaringan, setJenisJaringan, statusJaringan, setStatusJaringan,
   jarakGawang, setJarakGawang, tinggiTiang, setTinggiTiang,
   materialTiang, setMaterialTiang, offsetSide, setOffsetSide, isKabelTanah,
+  kondukturUkuran, setKondukturUkuran,
 }: Props) {
+  const conductor = CONDUCTOR[jenisJaringan] ?? { tipe: "AACS", ukuran: [70, 150, 240] };
+
   return (
     <div className="border border-gray-200 p-4 rounded-xl bg-gray-50">
       <h3 className="font-bold text-gray-700 mb-2 text-sm uppercase">Pengaturan Jaringan</h3>
@@ -45,6 +61,31 @@ export default function NetworkSettings({
             <option value="Existing">Existing</option>
             <option value="Perluasan">Perluasan</option>
           </select>
+        </div>
+      </div>
+
+      {/* Tipe Konduktor */}
+      <div className="mb-3">
+        <label className="text-xs text-gray-600 font-semibold mb-1 block">Tipe Konduktor:</label>
+        <div className="flex gap-2">
+          <div className="flex-1 px-3 py-2 border border-gray-200 rounded-lg bg-gray-100 text-sm font-bold text-gray-700">
+            {conductor.tipe}
+          </div>
+          {conductor.ukuran.length > 1 ? (
+            <select
+              className="flex-1 p-2 border border-gray-300 rounded-lg bg-white outline-none text-sm"
+              value={kondukturUkuran}
+              onChange={e => setKondukturUkuran(Number(e.target.value))}
+            >
+              {conductor.ukuran.map(u => (
+                <option key={u} value={u}>{u} mm²</option>
+              ))}
+            </select>
+          ) : (
+            <div className="flex-1 px-3 py-2 border border-gray-200 rounded-lg bg-gray-100 text-sm text-gray-700">
+              {conductor.ukuran[0]} mm²
+            </div>
+          )}
         </div>
       </div>
 

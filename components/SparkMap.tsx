@@ -275,6 +275,7 @@ export default function SparkMap() {
   const [jarakGawang, setJarakGawang] = useState(50);
   const [tinggiTiang, setTinggiTiang] = useState(12);
   const [materialTiang, setMaterialTiang] = useState("Beton");
+  const [kondukturUkuran, setKondukturUkuran] = useState(70);
 
   const trafoOptions = ["25 kVA", "50 kVA", "100 kVA", "160 kVA", "200 kVA", "250 kVA", "315 kVA", "400 kVA", "630 kVA"];
   const isKabelTanah = jenisJaringan === "SKTM" || jenisJaringan === "SKTR";
@@ -865,6 +866,7 @@ export default function SparkMap() {
     const layer: NetworkLayer = {
       id, label, poles: [...poles], line: [...line],
       jenisJaringan, statusJaringan, offsetSide, jarakGawang, tinggiTiang, materialTiang,
+      kondukturUkuran,
       gardus: { ...gardus }, schoors: { ...schoors },
       konstruksiOverrides: { ...konstruksiOverrides },
       autoSchoor, autoSchoorThreshold,
@@ -942,6 +944,7 @@ export default function SparkMap() {
     setJenisJaringan(layer.jenisJaringan); setStatusJaringan(layer.statusJaringan);
     setOffsetSide(layer.offsetSide); setJarakGawang(layer.jarakGawang);
     setTinggiTiang(layer.tinggiTiang); setMaterialTiang(layer.materialTiang);
+    setKondukturUkuran(layer.kondukturUkuran ?? 70);
     setGardus(layer.gardus); setSchoors(layer.schoors);
     setKonstruksiOverrides(layer.konstruksiOverrides ?? {});
     setAutoSchoor(layer.autoSchoor); setAutoSchoorThreshold(layer.autoSchoorThreshold);
@@ -1230,6 +1233,7 @@ export default function SparkMap() {
         total: Object.keys(l.schoors).length,
       },
       garduCount: Object.keys(l.gardus).length,
+      kondukturUkuran: l.kondukturUkuran ?? 70,
       konstruksiTypes: countPoleTypes(l.poles, l.jenisJaringan, l.konstruksiOverrides ?? {}, layerJunctionBranchIdxs),
     };
   });
@@ -1303,6 +1307,7 @@ export default function SparkMap() {
           jenisJaringan={jenisJaringan} statusJaringan={statusJaringan}
           totalLengthM={totalLengthM}
           tinggiTiang={tinggiTiang} materialTiang={materialTiang} jarakGawang={jarakGawang}
+          kondukturUkuran={kondukturUkuran}
           activeBranchCount={activeBranchIdxs.size}
           savedLayerStats={savedLayerStats}
         />
@@ -1802,6 +1807,7 @@ export default function SparkMap() {
           materialTiang={materialTiang} setMaterialTiang={setMaterialTiang}
           offsetSide={offsetSide} setOffsetSide={setOffsetSide}
           isKabelTanah={isKabelTanah}
+          kondukturUkuran={kondukturUkuran} setKondukturUkuran={setKondukturUkuran}
         />
 
         <TentikanTitikCard

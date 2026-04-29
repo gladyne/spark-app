@@ -11,7 +11,15 @@ export interface LayerStat {
   schoors: { treck: number; druck: number; kontramast: number; total: number };
   garduCount: number;
   konstruksiTypes: Record<string, { long: string; count: number }>;
+  kondukturUkuran: number;
 }
+
+const CONDUCTOR_TIPE: Record<string, string> = {
+  "SUTM": "AACS", "SUTM + SKUTR": "AACS",
+  "SUTM Underbuild (2 Jaringan)": "AACS", "SUTM Underbuild (3 Jaringan)": "AACS",
+  "SKUTM": "NFA2XSY-T", "SKTM": "NA2XSEBY",
+  "SKUTR": "NFA2X", "SKTR": "NFA2X",
+};
 
 interface Props {
   open: boolean;
@@ -27,6 +35,7 @@ interface Props {
   tinggiTiang: number;
   materialTiang: string;
   jarakGawang: number;
+  kondukturUkuran: number;
   // Jumlah tiang branch junction di active layer (tidak dihitung sebagai tiang mandiri)
   activeBranchCount: number;
   // Saved layers summary
@@ -40,9 +49,12 @@ function getTypeFields(pd: PoleData, jenis: string): { short: string; long: stri
   return { short: pd.jtmTypeShort, long: pd.jtmTypeLong };
 }
 
+function formatKm(m: number): string {
+  return `${(m / 1000).toFixed(3)} km`;
+}
+
 function formatLength(m: number): string {
-  if (m >= 1000) return `${(m / 1000).toFixed(2)} km`;
-  return `${Math.round(m)} m`;
+  return formatKm(m);
 }
 
 const KONSTRUKSI_COLOR: Record<string, string> = {
@@ -95,7 +107,7 @@ export default function RekapModal({
   open, onClose,
   poles, poleData, effectiveSchoors, gardus,
   jenisJaringan, statusJaringan, totalLengthM,
-  tinggiTiang, materialTiang, jarakGawang,
+  tinggiTiang, materialTiang, jarakGawang, kondukturUkuran,
   activeBranchCount,
   savedLayerStats,
 }: Props) {
@@ -123,6 +135,7 @@ export default function RekapModal({
       total: Object.keys(effectiveSchoors).length,
     },
     garduCount: Object.keys(gardus).length,
+    kondukturUkuran,
     konstruksiTypes: draftKonstruksiTypes,
   };
 
@@ -228,9 +241,7 @@ export default function RekapModal({
                       <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-sky-50 text-sky-600">{l.jenisJaringan}</span>
                     </td>
                     <td className="px-3 py-2 text-xs text-gray-500">Panjang Penghantar</td>
-                    <td className="px-3 py-2 text-right text-xs font-bold text-sky-700">
-                      {l.lengthM >= 1000 ? `${(l.lengthM / 1000).toFixed(3)} km` : `${Math.round(l.lengthM)} m`}
-                    </td>
+                    <td className="px-3 py-2 text-right text-xs font-bold text-sky-700">{formatKm(l.lengthM)}</td>
                   </tr>
                 </Table>
               </section>
@@ -334,6 +345,7 @@ export default function RekapModal({
                   { label: "Material", value: materialTiang },
                   { label: "Jarak Gawang", value: `${jarakGawang} m` },
                   { label: "Status", value: statusJaringan },
+                  { label: "Konduktor", value: `${CONDUCTOR_TIPE[jenisJaringan] ?? "AACS"} ${kondukturUkuran} mm²` },
                 ].map(({ label, value }) => (
                   <div key={label} className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5">
                     <p className="text-[10px] text-gray-400 font-semibold">{label}</p>
