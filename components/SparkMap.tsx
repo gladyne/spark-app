@@ -28,7 +28,7 @@ import NetworkSettings from "./sidebar/NetworkSettings";
 import TentikanTitikCard from "./sidebar/TentikanTitikCard";
 import LayerManager from "./sidebar/LayerManager";
 import ExecCard from "./sidebar/ExecCard";
-import RekapKonstruksi from "./sidebar/RekapKonstruksi";
+import RekapModal from "./modals/RekapModal";
 
 const DefaultIcon = L.icon({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -137,6 +137,7 @@ export default function SparkMap() {
   const [autoSchoor, setAutoSchoor] = useState(false);
   const [routingMode, setRoutingMode] = useState<"jalan" | "lurus">("jalan");
   const [autoSchoorThreshold, setAutoSchoorThreshold] = useState(15);
+  const [rekapOpen, setRekapOpen] = useState(false);
 
 
   // ─── ETAP-style palette ───────────────────────────────────────────────────
@@ -1269,6 +1270,15 @@ export default function SparkMap() {
       {/* MAP AREA */}
       <div className={`flex-1 relative z-0 ${editMode === "insert" ? "cursor-crosshair" : ""}`}>
 
+        <RekapModal
+          open={rekapOpen} onClose={() => setRekapOpen(false)}
+          poles={poles} poleData={poleData}
+          effectiveSchoors={effectiveSchoors} gardus={gardus}
+          jenisJaringan={jenisJaringan} statusJaringan={statusJaringan}
+          totalLengthM={totalLengthM}
+          tinggiTiang={tinggiTiang} materialTiang={materialTiang} jarakGawang={jarakGawang}
+        />
+
         {selectedGarduIdx !== null && (
           <GarduModal
             selectedGarduIdx={selectedGarduIdx} gardus={gardus} tempGardu={tempGardu}
@@ -1743,12 +1753,15 @@ export default function SparkMap() {
           />
         )}
 
-        <RekapKonstruksi
-          poles={poles} poleData={poleData}
-          effectiveSchoors={effectiveSchoors}
-          jenisJaringan={jenisJaringan}
-          totalLengthM={totalLengthM}
-        />
+        {poles.length > 0 && (
+          <button
+            onClick={() => setRekapOpen(true)}
+            className="w-full py-2.5 px-4 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 transition-all shadow-md
+              bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 hover:shadow-lg active:scale-[0.98]"
+          >
+            <span>📋</span> Rekap Konstruksi Gambar
+          </button>
+        )}
 
         <NetworkSettings
           jenisJaringan={jenisJaringan} setJenisJaringan={setJenisJaringan}
