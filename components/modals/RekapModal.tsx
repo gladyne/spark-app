@@ -1,9 +1,21 @@
 "use client";
 import type { PoleData, SchoorConfig, GarduConfig } from "../../types/spark";
 
+export interface LayerStat {
+  id: number;
+  label: string;
+  jenisJaringan: string;
+  statusJaringan: string;
+  polesCount: number;
+  lengthM: number;
+  schoors: { treck: number; druck: number; kontramast: number; total: number };
+  garduCount: number;
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
+  // Active draft (detailed breakdown)
   poles: [number, number][];
   poleData: PoleData[];
   effectiveSchoors: Record<number, SchoorConfig>;
@@ -14,6 +26,8 @@ interface Props {
   tinggiTiang: number;
   materialTiang: string;
   jarakGawang: number;
+  // Saved layers summary
+  savedLayerStats: LayerStat[];
 }
 
 function getTypeFields(pd: PoleData, jenis: string): { short: string; long: string } {
@@ -24,41 +38,94 @@ function getTypeFields(pd: PoleData, jenis: string): { short: string; long: stri
 }
 
 function formatLength(m: number): string {
-  if (m >= 1000) return `${(m / 1000).toFixed(2)} km  (${Math.round(m).toLocaleString("id-ID")} m)`;
+  if (m >= 1000) return `${(m / 1000).toFixed(2)} km`;
   return `${Math.round(m)} m`;
 }
 
 const KONSTRUKSI_COLOR: Record<string, string> = {
-  A1: "bg-blue-50 text-blue-700",
-  A2: "bg-yellow-50 text-yellow-700",
-  A3: "bg-orange-50 text-orange-700",
-  "A3 Pole": "bg-orange-50 text-orange-700",
-  "A3 Branch": "bg-purple-50 text-purple-700",
-  "2xA3": "bg-red-50 text-red-700",
-  B3: "bg-rose-50 text-rose-700",
-  S: "bg-sky-50 text-sky-700",
-  FDE: "bg-green-50 text-green-700",
-  LA: "bg-amber-50 text-amber-700",
-  "BDL+DE": "bg-teal-50 text-teal-700",
-  Trm: "bg-indigo-50 text-indigo-700",
-  "2xTrm": "bg-violet-50 text-violet-700",
-  TRM: "bg-gray-50 text-gray-700",
-  JNT: "bg-slate-50 text-slate-700",
-  "—": "bg-gray-50 text-gray-400",
+  A1: "bg-blue-50 text-blue-700", A2: "bg-yellow-50 text-yellow-700",
+  A3: "bg-orange-50 text-orange-700", "A3 Pole": "bg-orange-50 text-orange-700",
+  "A3 Branch": "bg-purple-50 text-purple-700", "2xA3": "bg-red-50 text-red-700",
+  B3: "bg-rose-50 text-rose-700", S: "bg-sky-50 text-sky-700",
+  FDE: "bg-green-50 text-green-700", LA: "bg-amber-50 text-amber-700",
+  "BDL+DE": "bg-teal-50 text-teal-700", Trm: "bg-indigo-50 text-indigo-700",
+  "2xTrm": "bg-violet-50 text-violet-700", TRM: "bg-gray-50 text-gray-700",
+  JNT: "bg-slate-50 text-slate-700", "—": "bg-gray-50 text-gray-400",
 };
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">{children}</h3>;
+}
+
+function Table({ head, children, footer }: { head: React.ReactNode; children: React.ReactNode; footer?: React.ReactNode }) {
+  return (
+    <table className="w-full text-sm border-collapse">
+      <thead><tr className="bg-gray-100 text-gray-500 text-[11px] uppercase tracking-wide">{head}</tr></thead>
+      <tbody>{children}</tbody>
+      {footer && <tfoot>{footer}</tfoot>}
+    </table>
+  );
+}
+
+function TH({ children, right }: { children: React.ReactNode; right?: boolean }) {
+  return <th className={`px-3 py-2 font-semibold ${right ? "text-right" : "text-left"}`}>{children}</th>;
+}
+
+function TD({ children, right, bold }: { children: React.ReactNode; right?: boolean; bold?: boolean }) {
+  return <td className={`px-3 py-2 ${right ? "text-right" : ""} ${bold ? "font-bold text-gray-800" : "text-gray-600"}`}>{children}</td>;
+}
+
+function TotalRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <tr className="border-t-2 border-gray-200 bg-gray-50">
+      <td colSpan={99} className="px-3 py-2">
+        <div className="flex justify-between items-center">
+          <span className="text-xs text-gray-500 uppercase font-bold tracking-wide">{label}</span>
+          <span className="text-blue-700 font-extrabold text-sm">{value}</span>
+        </div>
+      </td>
+    </tr>
+  );
+}
 
 export default function RekapModal({
   open, onClose,
   poles, poleData, effectiveSchoors, gardus,
   jenisJaringan, statusJaringan, totalLengthM,
   tinggiTiang, materialTiang, jarakGawang,
+  savedLayerStats,
 }: Props) {
   if (!open) return null;
 
+  const hasDraft = poles.length > 0;
+  const hasSaved = savedLayerStats.length > 0;
+
+  // ─── Aggregate totals (draft + saved) ───────────────────────────────────
+  const draftStat: LayerStat = {
+    id: -1, label: "Draft Aktif",
+    jenisJaringan, statusJaringan,
+    polesCount: poles.length, lengthM: totalLengthM,
+    schoors: {
+      treck: Object.values(effectiveSchoors).filter(s => s.jenis === "Treck").length,
+      druck: Object.values(effectiveSchoors).filter(s => s.jenis === "Druck").length,
+      kontramast: Object.values(effectiveSchoors).filter(s => s.jenis === "Kontramast").length,
+      total: Object.keys(effectiveSchoors).length,
+    },
+    garduCount: Object.keys(gardus).length,
+  };
+
+  const allStats: LayerStat[] = [...(hasDraft ? [draftStat] : []), ...savedLayerStats];
+  const totalPoles = allStats.reduce((s, l) => s + l.polesCount, 0);
+  const totalLength = allStats.reduce((s, l) => s + l.lengthM, 0);
+  const totalSchoor = allStats.reduce((s, l) => s + l.schoors.total, 0);
+  const totalTreck = allStats.reduce((s, l) => s + l.schoors.treck, 0);
+  const totalDruck = allStats.reduce((s, l) => s + l.schoors.druck, 0);
+  const totalKontramast = allStats.reduce((s, l) => s + l.schoors.kontramast, 0);
+  const totalGardu = allStats.reduce((s, l) => s + l.garduCount, 0);
+
+  // ─── Draft detail: konstruksi types ─────────────────────────────────────
   const isArrester = jenisJaringan.includes("SUTM") || jenisJaringan === "SKUTM";
   const arresterCount = poleData.filter(pd => pd.isGrounded).length;
-
-  // Rekap konstruksi: group by type
   const konstruksiMap: Record<string, { long: string; count: number }> = {};
   poleData.forEach(pd => {
     const { short, long } = getTypeFields(pd, jenisJaringan);
@@ -68,30 +135,17 @@ export default function RekapModal({
   });
   const konstruksiEntries = Object.entries(konstruksiMap).sort((a, b) => b[1].count - a[1].count);
 
-  // Rekap schoor
-  const schoorValues = Object.values(effectiveSchoors);
-  const treckCount = schoorValues.filter(s => s.jenis === "Treck").length;
-  const druckCount = schoorValues.filter(s => s.jenis === "Druck").length;
-  const kontramastCount = schoorValues.filter(s => s.jenis === "Kontramast").length;
-
-  // Rekap gardu
-  const garduValues = Object.values(gardus);
-  const garduCantol = garduValues.filter(g => g.jenis === "Cantol").length;
-  const garduPortal = garduValues.filter(g => g.jenis === "Portal").length;
-
   return (
     <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4">
-      {/* Overlay */}
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
 
-      {/* Modal card */}
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-sky-600 to-blue-700">
           <div>
             <h2 className="text-white font-extrabold text-lg tracking-tight">📋 Rekap Konstruksi Gambar</h2>
-            <p className="text-sky-200 text-xs mt-0.5">{jenisJaringan} · {statusJaringan}</p>
+            <p className="text-sky-200 text-xs mt-0.5">{allStats.length} jaringan · {totalPoles} tiang · {formatLength(totalLength)}</p>
           </div>
           <button onClick={onClose}
             className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center text-sm font-bold transition-colors">
@@ -99,39 +153,48 @@ export default function RekapModal({
           </button>
         </div>
 
-        {/* Scrollable body */}
+        {/* Body */}
         <div className="overflow-y-auto flex-1 p-5 flex flex-col gap-5">
 
-          {/* ─── Ringkasan Umum ─── */}
+          {/* ─── Ringkasan Per Layer ─── */}
           <section>
-            <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">Ringkasan Umum</h3>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { label: "Jumlah Tiang", value: `${poles.length} tiang`, color: "text-blue-700" },
-                { label: "Panjang Penghantar", value: formatLength(totalLengthM), color: "text-blue-700" },
-                { label: "Jarak Gawang", value: `${jarakGawang} m`, color: "text-gray-700" },
-                { label: "Tinggi Tiang", value: `${tinggiTiang} m · ${materialTiang}`, color: "text-gray-700" },
-              ].map(({ label, value, color }) => (
-                <div key={label} className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5">
-                  <p className="text-[10px] text-gray-400 font-semibold">{label}</p>
-                  <p className={`text-sm font-bold mt-0.5 ${color}`}>{value}</p>
-                </div>
+            <SectionTitle>Ringkasan Per Jaringan</SectionTitle>
+            <Table
+              head={<>
+                <TH>Nama Layer</TH>
+                <TH>Jenis</TH>
+                <TH right>Tiang</TH>
+                <TH right>Panjang</TH>
+              </>}
+              footer={
+                <TotalRow
+                  label={`Total · ${allStats.length} jaringan`}
+                  value={`${totalPoles} tiang · ${formatLength(totalLength)}`}
+                />
+              }
+            >
+              {allStats.map((l, i) => (
+                <tr key={l.id} className={`border-t border-gray-100 ${i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}>
+                  <td className="px-3 py-2">
+                    <span className="text-xs font-semibold text-gray-800 block truncate max-w-[120px]">{l.label}</span>
+                    {l.id === -1 && <span className="text-[9px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full font-bold">DRAFT</span>}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-gray-500">{l.jenisJaringan}</td>
+                  <td className="px-3 py-2 text-right font-bold text-gray-800 text-xs">{l.polesCount}</td>
+                  <td className="px-3 py-2 text-right text-xs text-gray-600">{formatLength(l.lengthM)}</td>
+                </tr>
               ))}
-            </div>
+            </Table>
           </section>
 
-          {/* ─── Data Konstruksi ─── */}
-          <section>
-            <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">Data Konstruksi</h3>
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr className="bg-gray-100 text-gray-500 text-[11px] uppercase tracking-wide">
-                  <th className="text-left px-3 py-2 rounded-tl-lg font-semibold">Tipe</th>
-                  <th className="text-left px-3 py-2 font-semibold">Keterangan</th>
-                  <th className="text-right px-3 py-2 rounded-tr-lg font-semibold">Jumlah</th>
-                </tr>
-              </thead>
-              <tbody>
+          {/* ─── Detail Konstruksi (draft saja) ─── */}
+          {hasDraft && konstruksiEntries.length > 0 && (
+            <section>
+              <SectionTitle>Detail Konstruksi · Draft Aktif ({jenisJaringan})</SectionTitle>
+              <Table
+                head={<><TH>Tipe</TH><TH>Keterangan</TH><TH right>Jumlah</TH></>}
+                footer={<TotalRow label="Total tiang" value={poles.length} />}
+              >
                 {konstruksiEntries.map(([type, { long, count }], i) => {
                   const colorClass = KONSTRUKSI_COLOR[type] ?? "bg-gray-50 text-gray-700";
                   return (
@@ -140,120 +203,118 @@ export default function RekapModal({
                         <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${colorClass}`}>{type}</span>
                       </td>
                       <td className="px-3 py-2 text-xs text-gray-500 truncate max-w-[160px]">{long}</td>
-                      <td className="px-3 py-2 text-right font-bold text-gray-800 text-sm">{count}</td>
+                      <TD right bold>{count}</TD>
                     </tr>
                   );
                 })}
-                <tr className="border-t-2 border-gray-200 bg-gray-50 font-bold">
-                  <td colSpan={2} className="px-3 py-2 text-xs text-gray-600 uppercase tracking-wide">Total</td>
-                  <td className="px-3 py-2 text-right text-blue-700 font-extrabold">{poles.length}</td>
-                </tr>
-              </tbody>
-            </table>
-          </section>
+              </Table>
+            </section>
+          )}
 
           {/* ─── Schoor ─── */}
           <section>
-            <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">Schoor</h3>
-            {schoorValues.length === 0 ? (
+            <SectionTitle>Schoor · Semua Jaringan</SectionTitle>
+            {totalSchoor === 0 ? (
               <p className="text-xs text-gray-400 italic px-1">Belum ada schoor terpasang</p>
             ) : (
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="bg-gray-100 text-gray-500 text-[11px] uppercase tracking-wide">
-                    <th className="text-left px-3 py-2 rounded-tl-lg font-semibold">Jenis</th>
-                    <th className="text-left px-3 py-2 font-semibold">Fungsi</th>
-                    <th className="text-right px-3 py-2 rounded-tr-lg font-semibold">Jumlah</th>
+              <Table
+                head={<><TH>Jenis</TH><TH>Fungsi</TH><TH right>Jumlah</TH></>}
+                footer={<TotalRow label="Total schoor" value={totalSchoor} />}
+              >
+                {totalTreck > 0 && (
+                  <tr className="border-t border-gray-100 bg-white">
+                    <td className="px-3 py-2"><span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-600">Treck</span></td>
+                    <td className="px-3 py-2 text-xs text-gray-500">Kawat tarik keluar</td>
+                    <TD right bold>{totalTreck}</TD>
                   </tr>
-                </thead>
-                <tbody>
-                  {treckCount > 0 && (
-                    <tr className="border-t border-gray-100 bg-white">
-                      <td className="px-3 py-2"><span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-600">Treck</span></td>
-                      <td className="px-3 py-2 text-xs text-gray-500">Kawat tarik keluar</td>
-                      <td className="px-3 py-2 text-right font-bold text-gray-800">{treckCount}</td>
-                    </tr>
-                  )}
-                  {druckCount > 0 && (
-                    <tr className="border-t border-gray-100 bg-gray-50/50">
-                      <td className="px-3 py-2"><span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">Druck</span></td>
-                      <td className="px-3 py-2 text-xs text-gray-500">Tiang dorong ke dalam</td>
-                      <td className="px-3 py-2 text-right font-bold text-gray-800">{druckCount}</td>
-                    </tr>
-                  )}
-                  {kontramastCount > 0 && (
-                    <tr className="border-t border-gray-100 bg-white">
-                      <td className="px-3 py-2"><span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-600">Kontramast</span></td>
-                      <td className="px-3 py-2 text-xs text-gray-500">Tiang jangkar seberang</td>
-                      <td className="px-3 py-2 text-right font-bold text-gray-800">{kontramastCount}</td>
-                    </tr>
-                  )}
-                  <tr className="border-t-2 border-gray-200 bg-gray-50 font-bold">
-                    <td colSpan={2} className="px-3 py-2 text-xs text-gray-600 uppercase tracking-wide">Total</td>
-                    <td className="px-3 py-2 text-right text-blue-700 font-extrabold">{schoorValues.length}</td>
+                )}
+                {totalDruck > 0 && (
+                  <tr className="border-t border-gray-100 bg-gray-50/50">
+                    <td className="px-3 py-2"><span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">Druck</span></td>
+                    <td className="px-3 py-2 text-xs text-gray-500">Tiang dorong ke dalam</td>
+                    <TD right bold>{totalDruck}</TD>
                   </tr>
-                </tbody>
-              </table>
+                )}
+                {totalKontramast > 0 && (
+                  <tr className="border-t border-gray-100 bg-white">
+                    <td className="px-3 py-2"><span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-600">Kontramast</span></td>
+                    <td className="px-3 py-2 text-xs text-gray-500">Tiang jangkar seberang</td>
+                    <TD right bold>{totalKontramast}</TD>
+                  </tr>
+                )}
+              </Table>
             )}
           </section>
 
-          {/* ─── Arrester / Grounding ─── */}
-          {arresterCount > 0 && (
+          {/* ─── Arrester / Grounding (draft only, requires grounding logic) ─── */}
+          {hasDraft && arresterCount > 0 && (
             <section>
-              <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">
-                {isArrester ? "Arrester (Lightning Arrester)" : "Grounding / Arde"}
-              </h3>
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="bg-gray-100 text-gray-500 text-[11px] uppercase tracking-wide">
-                    <th className="text-left px-3 py-2 rounded-tl-lg font-semibold">Komponen</th>
-                    <th className="text-right px-3 py-2 rounded-tr-lg font-semibold">Jumlah</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr className="border-t border-gray-100 bg-white">
-                    <td className="px-3 py-2">
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
-                        {isArrester ? "⚡ Arrester (LA)" : "⏚ Grounding"}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-right font-bold text-gray-800">{arresterCount}</td>
-                  </tr>
-                </tbody>
-              </table>
+              <SectionTitle>{isArrester ? "Arrester (Lightning Arrester)" : "Grounding / Arde"} · Draft Aktif</SectionTitle>
+              <Table head={<><TH>Komponen</TH><TH right>Jumlah</TH></>}>
+                <tr className="border-t border-gray-100 bg-white">
+                  <td className="px-3 py-2">
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+                      {isArrester ? "⚡ Arrester (LA)" : "⏚ Grounding"}
+                    </span>
+                  </td>
+                  <TD right bold>{arresterCount}</TD>
+                </tr>
+              </Table>
             </section>
           )}
 
           {/* ─── Gardu ─── */}
-          {garduValues.length > 0 && (
-            <section>
-              <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">Gardu Distribusi</h3>
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="bg-gray-100 text-gray-500 text-[11px] uppercase tracking-wide">
-                    <th className="text-left px-3 py-2 rounded-tl-lg font-semibold">Jenis</th>
-                    <th className="text-right px-3 py-2 rounded-tr-lg font-semibold">Jumlah</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {garduCantol > 0 && (
+          {totalGardu > 0 && (() => {
+            const draftCantol = Object.values(gardus).filter(g => g.jenis === "Cantol").length;
+            const draftPortal = Object.values(gardus).filter(g => g.jenis === "Portal").length;
+            const savedGardu = savedLayerStats.reduce((s, l) => s + l.garduCount, 0);
+            return (
+              <section>
+                <SectionTitle>Gardu Distribusi · Semua Jaringan</SectionTitle>
+                <Table
+                  head={<><TH>Jenis</TH><TH right>Jumlah</TH></>}
+                  footer={<TotalRow label="Total gardu" value={totalGardu} />}
+                >
+                  {draftCantol > 0 && (
                     <tr className="border-t border-gray-100 bg-white">
                       <td className="px-3 py-2"><span className="text-xs font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">Gardu Cantol</span></td>
-                      <td className="px-3 py-2 text-right font-bold text-gray-800">{garduCantol}</td>
+                      <TD right bold>{draftCantol}</TD>
                     </tr>
                   )}
-                  {garduPortal > 0 && (
+                  {draftPortal > 0 && (
                     <tr className="border-t border-gray-100 bg-gray-50/50">
                       <td className="px-3 py-2"><span className="text-xs font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-700">Gardu Portal</span></td>
-                      <td className="px-3 py-2 text-right font-bold text-gray-800">{garduPortal}</td>
+                      <TD right bold>{draftPortal}</TD>
                     </tr>
                   )}
-                  <tr className="border-t-2 border-gray-200 bg-gray-50">
-                    <td className="px-3 py-2 text-xs text-gray-600 uppercase font-bold tracking-wide">Total</td>
-                    <td className="px-3 py-2 text-right text-blue-700 font-extrabold">{garduValues.length}</td>
-                  </tr>
-                </tbody>
-              </table>
+                  {savedGardu > 0 && (
+                    <tr className="border-t border-gray-100 bg-white">
+                      <td className="px-3 py-2"><span className="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">Gardu (Layer Tersimpan)</span></td>
+                      <TD right bold>{savedGardu}</TD>
+                    </tr>
+                  )}
+                </Table>
+              </section>
+            );
+          })()}
+
+          {/* ─── Info tiang & spesifikasi ─── */}
+          {hasDraft && (
+            <section>
+              <SectionTitle>Spesifikasi Tiang · Draft Aktif</SectionTitle>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: "Tinggi Tiang", value: `${tinggiTiang} m` },
+                  { label: "Material", value: materialTiang },
+                  { label: "Jarak Gawang", value: `${jarakGawang} m` },
+                  { label: "Status", value: statusJaringan },
+                ].map(({ label, value }) => (
+                  <div key={label} className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5">
+                    <p className="text-[10px] text-gray-400 font-semibold">{label}</p>
+                    <p className="text-sm font-bold text-gray-700 mt-0.5">{value}</p>
+                  </div>
+                ))}
+              </div>
             </section>
           )}
 

@@ -28,7 +28,7 @@ import NetworkSettings from "./sidebar/NetworkSettings";
 import TentikanTitikCard from "./sidebar/TentikanTitikCard";
 import LayerManager from "./sidebar/LayerManager";
 import ExecCard from "./sidebar/ExecCard";
-import RekapModal from "./modals/RekapModal";
+import RekapModal, { type LayerStat } from "./modals/RekapModal";
 
 const DefaultIcon = L.icon({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -1207,6 +1207,21 @@ export default function SparkMap() {
   const totalLengthM = line.length > 1
     ? turf.length(turf.lineString(line.map(p => [p[1], p[0]])), { units: "kilometers" }) * 1000
     : 0;
+  const savedLayerStats: LayerStat[] = savedLayers.map(l => ({
+    id: l.id, label: l.label,
+    jenisJaringan: l.jenisJaringan, statusJaringan: l.statusJaringan,
+    polesCount: l.poles.length,
+    lengthM: l.line.length > 1
+      ? turf.length(turf.lineString(l.line.map(p => [p[1], p[0]])), { units: "kilometers" }) * 1000
+      : 0,
+    schoors: {
+      treck: Object.values(l.schoors).filter(s => s.jenis === "Treck").length,
+      druck: Object.values(l.schoors).filter(s => s.jenis === "Druck").length,
+      kontramast: Object.values(l.schoors).filter(s => s.jenis === "Kontramast").length,
+      total: Object.keys(l.schoors).length,
+    },
+    garduCount: Object.keys(l.gardus).length,
+  }));
 
   // ─── Line color / style ───────────────────────────────────────────────────
   let lineColor = "red"; let lineColor2: string | null = null; let lineColor3: string | null = null;
@@ -1277,6 +1292,7 @@ export default function SparkMap() {
           jenisJaringan={jenisJaringan} statusJaringan={statusJaringan}
           totalLengthM={totalLengthM}
           tinggiTiang={tinggiTiang} materialTiang={materialTiang} jarakGawang={jarakGawang}
+          savedLayerStats={savedLayerStats}
         />
 
         {selectedGarduIdx !== null && (
@@ -1755,15 +1771,15 @@ export default function SparkMap() {
 
         <button
           onClick={() => setRekapOpen(true)}
-          disabled={poles.length === 0}
+          disabled={poles.length === 0 && savedLayers.length === 0}
           className={`w-full py-2.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-md
-            ${poles.length > 0
+            ${poles.length > 0 || savedLayers.length > 0
               ? "text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 hover:shadow-lg active:scale-[0.98]"
               : "text-gray-400 bg-gray-100 border border-gray-200 cursor-not-allowed shadow-none"
             }`}
         >
           <span>📋</span> Rekap Konstruksi Gambar
-          {poles.length === 0 && <span className="text-[10px] font-normal">(belum ada tiang)</span>}
+          {poles.length === 0 && savedLayers.length === 0 && <span className="text-[10px] font-normal">(belum ada tiang)</span>}
         </button>
 
         <NetworkSettings
