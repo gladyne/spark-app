@@ -52,7 +52,7 @@ function getTypeFields(pd: PoleData, jenis: string): { short: string; long: stri
 }
 
 function formatKm(m: number): string {
-  return `${(m / 1000).toFixed(3)} km`;
+  return `${(m / 1000).toFixed(3)} kms`;
 }
 
 function formatLength(m: number): string {
