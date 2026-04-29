@@ -1234,6 +1234,8 @@ export default function SparkMap() {
       },
       garduCount: Object.keys(l.gardus).length,
       kondukturUkuran: l.kondukturUkuran ?? 70,
+      tinggiTiang: l.tinggiTiang,
+      materialTiang: l.materialTiang,
       konstruksiTypes: countPoleTypes(l.poles, l.jenisJaringan, l.konstruksiOverrides ?? {}, layerJunctionBranchIdxs),
     };
   });
