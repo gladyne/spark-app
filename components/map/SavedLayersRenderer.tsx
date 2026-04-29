@@ -337,7 +337,9 @@ export default function SavedLayersRenderer({
               if (layer.jenisJaringan.includes("SUTM")) {
                 if (layer.poles.length < 2) jtmType = "A1";
                 else if (maxSpan >= 70) jtmType = "B3";
-                else if (idx === 0 || isLastP || (idx + 1) % 10 === 0) jtmType = "A3";
+                else if (isJunctionHost) jtmType = "A3 Branch";
+                else if (idx === 0 || isLastP) jtmType = "A3 Pole";
+                else if ((idx + 1) % 10 === 0) jtmType = "A3";
                 else if (angle > 30) jtmType = "2xA3";
                 else if (angle >= 10) jtmType = "A2";
                 else jtmType = "A1";
@@ -351,21 +353,22 @@ export default function SavedLayersRenderer({
                 else if (layer.jenisJaringan === "SKUTM") skutmType = konstruksiOverride;
               }
               
-              // Hitung konstruksi gabungan untuk junction host
+              // Hitung konstruksi gabungan untuk junction host (semua jenis jaringan)
               let combinedSuffix = "";
               if (isJunctionHost && !overrideToTerminasi) {
                 const hostJunctions = junctions.filter(j => j.hostLayerId === layer.id && j.hostPoleIdx === idx);
                 const branchParts = hostJunctions.map(j => {
                   const bLayer = savedLayers.find(l => l.id === j.branchLayerId);
-                  if (!bLayer) return "";
-                  if (bLayer.jenisJaringan === "SKTM" || bLayer.jenisJaringan === "SKTR") return "";
-                  if (!bLayer.jenisJaringan.includes("SUTM") || bLayer.poles.length < 2) return "";
+                  if (!bLayer || bLayer.poles.length < 1) return "";
                   const bIdx = j.branchPoleIdx;
                   const bPoles = bLayer.poles;
                   const bIsEnd = bIdx === 0 || bIdx === bPoles.length - 1;
-                  const bPt = turf.point([bPoles[bIdx][1], bPoles[bIdx][0]]);
 
-                  // Hitung sudut belokan branch
+                  // Hormati override konstruksi pada branch layer
+                  const bOverride = (bLayer.konstruksiOverrides ?? {})[bIdx];
+                  if (bOverride) return bOverride;
+
+                  const bPt = turf.point([bPoles[bIdx][1], bPoles[bIdx][0]]);
                   let bAngle = 0;
                   if (bIdx > 0 && bIdx < bPoles.length - 1) {
                     const bb1 = turf.bearing(turf.point([bPoles[bIdx - 1][1], bPoles[bIdx - 1][0]]), bPt);
@@ -374,7 +377,6 @@ export default function SavedLayersRenderer({
                     bAngle = bdiff;
                   }
 
-                  // jtmType untuk SUTM
                   let bJtm = "";
                   if (bLayer.jenisJaringan.includes("SUTM")) {
                     let bMaxSpan = 0;
@@ -387,7 +389,6 @@ export default function SavedLayersRenderer({
                     else bJtm = "A1";
                   }
 
-                  // jtrType untuk SKUTR / Underbuild
                   let bJtr = "";
                   if (bLayer.jenisJaringan.includes("SKUTR") || bLayer.jenisJaringan.includes("Underbuild")) {
                     if (bIdx === 0) bJtr = "FDE";
@@ -396,17 +397,29 @@ export default function SavedLayersRenderer({
                     else bJtr = "S";
                   }
 
-                  if (bJtm && bJtr) return `${bJtm}+${bJtr}`;
-                  return bJtm || bJtr;
+                  let bSkutm = "";
+                  if (bLayer.jenisJaringan === "SKUTM") {
+                    if (bIsEnd) bSkutm = "Trm";
+                    else if (bAngle > 75) bSkutm = "2xTrm";
+                    else if (bAngle > 5) bSkutm = "LA";
+                    else bSkutm = "S";
+                  }
+
+                  let bKabel = "";
+                  if (bLayer.jenisJaringan === "SKTM" || bLayer.jenisJaringan === "SKTR") {
+                    bKabel = bIsEnd ? "TRM" : "JNT";
+                  }
+
+                  return [bJtm, bJtr, bSkutm, bKabel].filter(Boolean).join("+");
                 }).filter(Boolean);
-                if (!overrideToTerminasi && branchParts.length > 0) combinedSuffix = " + " + branchParts.join(" + ");
+                if (branchParts.length > 0) combinedSuffix = "+" + branchParts.join("+");
               }
 
+              const baseConstruct = jtmType || jtrType || skutmType || (isKT ? (isTerminasi ? "T" : "J") : "");
               let mapLabelHtml = "";
               if (overrideToTerminasi) {
-                mapLabelHtml = "T"; // diamond sudah menampilkan T, label di bawah tetap "T" seperti terminasi normal
+                mapLabelHtml = "T";
               } else if (combinedSuffix) {
-                const baseConstruct = jtmType || jtrType || "";
                 mapLabelHtml = baseConstruct + combinedSuffix;
                 if (jtmType && jtrType) mapLabelHtml += `<br/>${jtrType}`;
               } else if (isKT) {
@@ -414,7 +427,7 @@ export default function SavedLayersRenderer({
               } else if (jtmType && jtrType) {
                 mapLabelHtml = `${jtmType}<br/>${jtrType}`;
               } else {
-                mapLabelHtml = jtmType || jtrType;
+                mapLabelHtml = baseConstruct;
               }
 
               const gardu = layer.gardus[idx];

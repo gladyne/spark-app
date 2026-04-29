@@ -25,8 +25,6 @@ interface Props {
   // Handlers
   activatePalette: (type: "schoor" | "gardu", subtype: string) => void;
   toggleEditMode: (mode: "insert" | "delete" | "gardu" | "schoor" | "konstruksi") => void;
-  handleUndo: () => void;
-  historyLength: number;
   highlightedLayerIds: Set<number>;
 }
 
@@ -54,7 +52,7 @@ export default function ComponentPalette({
   paletteSchoorJenis,
   savedLayers, connections, connectMode, connectFirst,
   setConnections, setConnectMode, setConnectFirst,
-  activatePalette, toggleEditMode, handleUndo, historyLength,
+  activatePalette, toggleEditMode,
   highlightedLayerIds,
 }: Props) {
   if (poles.length === 0 && highlightedLayerIds.size === 0) return null;
@@ -173,10 +171,6 @@ export default function ComponentPalette({
         <div className="flex gap-2">
           <button onClick={() => toggleEditMode("insert")} className={`flex-1 p-2 text-xs rounded-lg font-bold shadow-sm transition-all ${editMode === "insert" ? "bg-blue-600 text-white ring-2 ring-blue-300" : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"}`}>➕ Sisip</button>
           <button onClick={() => toggleEditMode("delete")} className={`flex-1 p-2 text-xs rounded-lg font-bold shadow-sm transition-all ${editMode === "delete" ? "bg-red-600 text-white ring-2 ring-red-300" : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"}`}>🗑️ Hapus</button>
-          <button onClick={handleUndo} disabled={historyLength === 0}
-            className={`flex-1 p-2 text-xs rounded-lg font-bold shadow-sm transition-all flex items-center justify-center gap-1 ${historyLength > 0 ? "bg-amber-100 border border-amber-300 text-amber-800 hover:bg-amber-200" : "bg-gray-100 border border-gray-200 text-gray-400 cursor-not-allowed"}`}>
-            ↩️ Undo {historyLength > 0 && <span className="bg-amber-300 text-amber-900 px-1.5 py-0.5 rounded-full text-[9px]">{historyLength}</span>}
-          </button>
         </div>
       </div>
     </div>
