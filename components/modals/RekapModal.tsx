@@ -27,6 +27,8 @@ interface Props {
   tinggiTiang: number;
   materialTiang: string;
   jarakGawang: number;
+  // Jumlah tiang branch junction di active layer (tidak dihitung sebagai tiang mandiri)
+  activeBranchCount: number;
   // Saved layers summary
   savedLayerStats: LayerStat[];
 }
@@ -94,6 +96,7 @@ export default function RekapModal({
   poles, poleData, effectiveSchoors, gardus,
   jenisJaringan, statusJaringan, totalLengthM,
   tinggiTiang, materialTiang, jarakGawang,
+  activeBranchCount,
   savedLayerStats,
 }: Props) {
   if (!open) return null;
@@ -112,7 +115,7 @@ export default function RekapModal({
   const draftStat: LayerStat = {
     id: -1, label: "Draft Aktif",
     jenisJaringan, statusJaringan,
-    polesCount: poles.length, lengthM: totalLengthM,
+    polesCount: poles.length - activeBranchCount, lengthM: totalLengthM,
     schoors: {
       treck: Object.values(effectiveSchoors).filter(s => s.jenis === "Treck").length,
       druck: Object.values(effectiveSchoors).filter(s => s.jenis === "Druck").length,

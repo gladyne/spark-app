@@ -1214,10 +1214,12 @@ export default function SparkMap() {
     const layerJunctionBranchIdxs = new Set(
       junctions.filter(j => j.branchLayerId === l.id).map(j => j.branchPoleIdx)
     );
+    // Tiang junction branch tidak dihitung sebagai tiang mandiri (fisiknya milik layer host)
+    const branchJunctionCount = layerJunctionBranchIdxs.size;
     return {
       id: l.id, label: l.label,
       jenisJaringan: l.jenisJaringan, statusJaringan: l.statusJaringan,
-      polesCount: l.poles.length,
+      polesCount: l.poles.length - branchJunctionCount,
       lengthM: l.line.length > 1
         ? turf.length(turf.lineString(l.line.map(p => [p[1], p[0]])), { units: "kilometers" }) * 1000
         : 0,
@@ -1301,6 +1303,7 @@ export default function SparkMap() {
           jenisJaringan={jenisJaringan} statusJaringan={statusJaringan}
           totalLengthM={totalLengthM}
           tinggiTiang={tinggiTiang} materialTiang={materialTiang} jarakGawang={jarakGawang}
+          activeBranchCount={activeBranchIdxs.size}
           savedLayerStats={savedLayerStats}
         />
 
