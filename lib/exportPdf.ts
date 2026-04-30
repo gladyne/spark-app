@@ -88,8 +88,8 @@ function drawSchematic(
   const CW = canvas.width  / SCALE;
   const CH = canvas.height / SCALE;
 
-  // ── Coordinate projection ──────────────────────────────────────────────
-  const allCoords: [number, number][] = layers.flatMap(l => [...l.poles, ...l.line]);
+  // ── Coordinate projection — use poles only as source of truth ──────────
+  const allCoords: [number, number][] = layers.flatMap(l => l.poles);
   if (allCoords.length === 0) return;
 
   const lats = allCoords.map(c => c[0]);
@@ -145,97 +145,99 @@ function drawSchematic(
     }
   }
 
-  // ── Draw layers ──────────────────────────────────────────────────────────
+  // ── Draw layers — everything derived from poles only ─────────────────────
+  // Pass 1: network lines + distance labels (drawn under poles)
   layers.forEach(layer => {
+    if (layer.poles.length < 2) return;
     const isExisting = layer.statusJaringan === "Existing";
     const lineColor  = isExisting ? "#374151" : "#2563eb";
-    const poleStroke = isExisting ? "#374151" : "#1e40af";
 
-    // Road guide (route centerline — golden road style)
-    if (layer.line.length > 1) {
-      const pts = layer.line.map(([la, ln]) => project(la, ln));
-      // Outer road fill
-      ctx.beginPath();
-      pts.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
-      ctx.strokeStyle = "#fbbf24";
-      ctx.lineWidth   = 14;
-      ctx.lineCap     = "round";
-      ctx.lineJoin    = "round";
-      ctx.globalAlpha = 0.25;
-      ctx.stroke();
-      // Inner road fill
-      ctx.beginPath();
-      pts.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
-      ctx.strokeStyle = "#fde68a";
-      ctx.lineWidth   = 8;
-      ctx.globalAlpha = 0.35;
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
+    const pts = layer.poles.map(([la, ln]) => project(la, ln));
 
-    // Network line (pole-to-pole)
-    if (layer.poles.length > 1) {
-      const pts = layer.poles.map(([la, ln]) => project(la, ln));
-      ctx.beginPath();
-      pts.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
-      ctx.strokeStyle = lineColor;
-      ctx.lineWidth   = 2.5;
-      ctx.lineCap     = "round";
-      ctx.lineJoin    = "round";
-      ctx.setLineDash(isExisting ? [] : [10, 5]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
+    // Road glow (soft halo under network line for road feel)
+    ctx.beginPath();
+    pts.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
+    ctx.strokeStyle = isExisting ? "#9ca3af" : "#93c5fd";
+    ctx.lineWidth   = 12;
+    ctx.lineCap     = "round";
+    ctx.lineJoin    = "round";
+    ctx.globalAlpha = 0.22;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
 
-    // Distance labels
-    ctx.font = "bold 7.5px 'Helvetica Neue', Arial, sans-serif";
+    // Network line
+    ctx.beginPath();
+    pts.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth   = 2.5;
+    ctx.lineCap     = "round";
+    ctx.lineJoin    = "round";
+    ctx.setLineDash(isExisting ? [] : [10, 5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Distance labels (perpendicular offset from segment midpoint)
+    ctx.font = "bold 7.5px Arial, sans-serif";
     ctx.textAlign = "center";
-    for (let i = 0; i < layer.poles.length - 1; i++) {
-      const [x1, y1] = project(layer.poles[i][0],   layer.poles[i][1]);
-      const [x2, y2] = project(layer.poles[i+1][0], layer.poles[i+1][1]);
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x1, y1] = pts[i];
+      const [x2, y2] = pts[i + 1];
       const mx = (x1 + x2) / 2;
       const my = (y1 + y2) / 2;
-      const dist = haversineMeters(layer.poles[i][0], layer.poles[i][1], layer.poles[i+1][0], layer.poles[i+1][1]);
+      const dist  = haversineMeters(layer.poles[i][0], layer.poles[i][1], layer.poles[i+1][0], layer.poles[i+1][1]);
       const label = `${Math.round(dist)} m`;
 
-      // Angle of line for placing label above
+      // Place label perpendicular-offset above the segment
       const angle = Math.atan2(y2 - y1, x2 - x1);
-      const perpX = -Math.sin(angle) * 11;
-      const perpY =  Math.cos(angle) * 11;
-      const lx = mx + perpX;
-      const ly = my + perpY;
+      const ox = -Math.sin(angle) * 12;
+      const oy =  Math.cos(angle) * 12;
+      const lx = mx + ox;
+      const ly = my + oy;
 
       const tw = ctx.measureText(label).width;
-      ctx.fillStyle = "rgba(255,255,255,0.88)";
-      ctx.fillRect(lx - tw / 2 - 2, ly - 7, tw + 4, 10);
+      ctx.fillStyle = "rgba(255,255,255,0.90)";
+      ctx.fillRect(lx - tw / 2 - 2, ly - 7.5, tw + 4, 11);
       ctx.fillStyle = lineColor;
-      ctx.fillText(label, lx, ly + 1);
+      ctx.fillText(label, lx, ly + 1.5);
     }
+  });
 
-    // Poles
+  // Pass 2: pole circles + construction labels (on top of lines)
+  layers.forEach(layer => {
+    const isExisting = layer.statusJaringan === "Existing";
+    const poleStroke = isExisting ? "#374151" : "#1e40af";
+
     layer.poles.forEach(([la, ln], idx) => {
       const [px, py] = project(la, ln);
-      const pt       = layer.poleTypes[idx];
-      const type     = pt?.short || "A1";
-      const color    = TYPE_COLOR[type] ?? "#374151";
+      const pt    = layer.poleTypes[idx];
+      const type  = pt?.short || "A1";
+      const color = TYPE_COLOR[type] ?? "#374151";
 
-      // Shadow
+      // Drop shadow
       ctx.beginPath();
-      ctx.arc(px, py, 7.5, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(0,0,0,0.10)";
+      ctx.arc(px + 0.5, py + 0.8, 6.5, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(0,0,0,0.12)";
       ctx.fill();
 
-      // White fill
+      // Circle
       ctx.beginPath();
       ctx.arc(px, py, 6.5, 0, Math.PI * 2);
-      ctx.fillStyle = "#ffffff";
+      ctx.fillStyle   = "#ffffff";
       ctx.fill();
       ctx.strokeStyle = poleStroke;
       ctx.lineWidth   = 2;
       ctx.stroke();
 
-      // Construction type label below pole
-      ctx.font      = "bold 7px 'Helvetica Neue', Arial, sans-serif";
+      // Inner dot for A3-type poles
+      if (type.startsWith("A3") || type === "2xA3") {
+        ctx.beginPath();
+        ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+      }
+
+      // Construction label
+      ctx.font      = "bold 7px Arial, sans-serif";
       ctx.fillStyle = color;
       ctx.textAlign = "center";
       ctx.fillText(type, px, py + 17);
