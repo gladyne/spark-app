@@ -115,12 +115,23 @@ export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
   const firstStat       = allStats[0];
 
   // ── Capture map ──────────────────────────────────────────────────────────
+  // html2canvas cannot parse oklch/lab — strip them from cloned styles before render
   const canvas = await html2canvas(mapEl, {
     useCORS: true,
     allowTaint: true,
     scale: 2,
     logging: false,
     imageTimeout: 15000,
+    onclone: (clonedDoc) => {
+      clonedDoc.querySelectorAll("style").forEach(style => {
+        if (!style.textContent) return;
+        style.textContent = style.textContent
+          .replace(/:\s*oklch\([^)]+\)/g, ": inherit")
+          .replace(/:\s*\blab\([^)]+\)/g, ": inherit")
+          .replace(/:\s*\blch\([^)]+\)/g, ": inherit")
+          .replace(/:\s*oklab\([^)]+\)/g, ": inherit");
+      });
+    },
   });
 
   // ── PDF setup ─────────────────────────────────────────────────────────────
