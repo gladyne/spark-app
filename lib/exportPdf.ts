@@ -115,22 +115,44 @@ export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
   const firstStat       = allStats[0];
 
   // ── Capture map ──────────────────────────────────────────────────────────
-  // html2canvas cannot parse oklch/lab — strip them from cloned styles before render
+  // html2canvas cannot parse oklch/lab (Tailwind v4 default). Fix:
+  // 1. Patch inline <style> tags, 2. Fetch+patch external <link> stylesheets.
+  const fixCss = (css: string) =>
+    css
+      .replace(/:\s*oklch\([^)]+\)/g, ": inherit")
+      .replace(/:\s*\blab\([^)]+\)/g, ": inherit")
+      .replace(/:\s*\blch\([^)]+\)/g, ": inherit")
+      .replace(/:\s*oklab\([^)]+\)/g, ": inherit");
+
   const canvas = await html2canvas(mapEl, {
     useCORS: true,
     allowTaint: true,
     scale: 2,
     logging: false,
     imageTimeout: 15000,
-    onclone: (clonedDoc) => {
+    onclone: async (clonedDoc) => {
+      // Patch inline style tags
       clonedDoc.querySelectorAll("style").forEach(style => {
-        if (!style.textContent) return;
-        style.textContent = style.textContent
-          .replace(/:\s*oklch\([^)]+\)/g, ": inherit")
-          .replace(/:\s*\blab\([^)]+\)/g, ": inherit")
-          .replace(/:\s*\blch\([^)]+\)/g, ": inherit")
-          .replace(/:\s*oklab\([^)]+\)/g, ": inherit");
+        if (style.textContent) style.textContent = fixCss(style.textContent);
       });
+
+      // Fetch and patch linked stylesheets, then inline them
+      const links = Array.from(
+        clonedDoc.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')
+      );
+      await Promise.all(
+        links.map(async link => {
+          try {
+            const res = await fetch(link.href);
+            const css = fixCss(await res.text());
+            const style = clonedDoc.createElement("style");
+            style.textContent = css;
+            link.parentNode?.replaceChild(style, link);
+          } catch {
+            link.remove(); // remove if unfetchable to avoid parse errors
+          }
+        })
+      );
     },
   });
 
