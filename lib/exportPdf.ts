@@ -1,5 +1,9 @@
+import { haversineMeters } from "./geo";
 import type { LayerStat } from "../components/modals/RekapModal";
 import type { PoleData, SchoorConfig, GarduConfig } from "../types/spark";
+import type { PoleTypeResult } from "./computePoleData";
+
+// ── Constants ──────────────────────────────────────────────────────────────
 
 const CONDUCTOR_TIPE: Record<string, string> = {
   "SUTM": "AAACS", "SUTM + SKUTR": "AAACS",
@@ -28,20 +32,36 @@ const KONSTRUKSI_ORDER = [
   "A3 Pole","A3 Branch","A3","2xA3","A2","A1","S","LA","FDE","BDL+DE","Trm","2xTrm","JNT",
 ];
 
-function getTypeFields(pd: PoleData, jenis: string): { short: string } {
-  if (jenis.includes("SKUTR") || jenis.includes("Underbuild")) return { short: pd.jtrTypeShort };
-  if (jenis === "SKUTM") return { short: pd.skutmTypeShort };
-  if (jenis === "SKTM" || jenis === "SKTR") return { short: pd.kabelTypeShort };
-  return { short: pd.jtmTypeShort };
+const TYPE_COLOR: Record<string, string> = {
+  A1:          "#3b82f6",
+  A2:          "#f59e0b",
+  A3:          "#ef4444",
+  "A3 Pole":   "#ef4444",
+  "A3 Branch": "#8b5cf6",
+  "2xA3":      "#dc2626",
+  S:           "#0ea5e9",
+  LA:          "#d97706",
+  FDE:         "#16a34a",
+  "BDL+DE":    "#0d9488",
+  Trm:         "#6366f1",
+};
+
+// ── Interfaces ─────────────────────────────────────────────────────────────
+
+export interface LayerDrawData {
+  id: number;
+  label: string;
+  poles: [number, number][];
+  line:  [number, number][];      // route line from OSRM / lurus
+  poleTypes: PoleTypeResult[];    // per-pole construction type
+  jenisJaringan: string;
+  statusJaringan: string;
 }
 
 export interface ExportPdfOptions {
-  mapEl: HTMLElement;
   projectTitle: string;
-  // latlng → container pixel (from mapRef.current.latLngToContainerPoint)
-  latLngToPoint: (latlng: [number, number]) => { x: number; y: number };
-  // all poles to draw (active + all saved layers)
-  allPoles: [number, number][];
+  layers: LayerDrawData[];
+  // stats for BOM panel
   poles: [number, number][];
   poleData: PoleData[];
   effectiveSchoors: Record<number, SchoorConfig>;
@@ -57,100 +77,208 @@ export interface ExportPdfOptions {
   savedLayerStats: LayerStat[];
 }
 
-// ── Manual Leaflet map capture (no html2canvas — avoids oklch CSS parse error) ──
-async function captureLeafletMap(
-  mapEl: HTMLElement,
-  latLngToPoint: (latlng: [number, number]) => { x: number; y: number },
-  allPoles: [number, number][],
-): Promise<string> {
-  const mapRect = mapEl.getBoundingClientRect();
-  const W = Math.round(mapRect.width);
-  const H = Math.round(mapRect.height);
-  const SCALE = 2;
+// ── Schematic drawing ──────────────────────────────────────────────────────
 
-  const canvas = document.createElement("canvas");
-  canvas.width  = W * SCALE;
-  canvas.height = H * SCALE;
+function drawSchematic(
+  canvas: HTMLCanvasElement,
+  layers: LayerDrawData[],
+  SCALE: number,
+): void {
   const ctx = canvas.getContext("2d")!;
-  ctx.scale(SCALE, SCALE);
+  const CW = canvas.width  / SCALE;
+  const CH = canvas.height / SCALE;
 
-  // Light map background
-  ctx.fillStyle = "#e8eaed";
-  ctx.fillRect(0, 0, W, H);
+  // ── Coordinate projection ──────────────────────────────────────────────
+  const allCoords: [number, number][] = layers.flatMap(l => [...l.poles, ...l.line]);
+  if (allCoords.length === 0) return;
 
-  // ── 1. Tile images via fetch (avoids tainted-canvas CORS issue) ─────────
-  const tiles = Array.from(
-    mapEl.querySelectorAll<HTMLImageElement>(".leaflet-tile:not(.leaflet-tile-loading)")
-  ).filter(t => t.src && t.complete && t.naturalWidth > 0);
+  const lats = allCoords.map(c => c[0]);
+  const lngs = allCoords.map(c => c[1]);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+  const midLat = (minLat + maxLat) / 2;
+  const cos = Math.cos((midLat * Math.PI) / 180); // lng correction
 
-  await Promise.all(tiles.map(async tile => {
-    const tRect = tile.getBoundingClientRect();
-    const x = tRect.left - mapRect.left;
-    const y = tRect.top  - mapRect.top;
-    const w = tRect.width;
-    const h = tRect.height;
-    try {
-      const res  = await fetch(tile.src, { mode: "cors" });
-      const blob = await res.blob();
-      const url  = URL.createObjectURL(blob);
-      await new Promise<void>(resolve => {
-        const img = new Image();
-        img.onload  = () => { try { ctx.drawImage(img, x, y, w, h); } catch {} URL.revokeObjectURL(url); resolve(); };
-        img.onerror = () => { URL.revokeObjectURL(url); resolve(); };
-        img.src = url;
-      });
-    } catch { /* tile unreachable — skip */ }
-  }));
-
-  // ── 2. Leaflet SVG overlay (polylines, schoor SVGs, etc.) ──────────────
-  const svgEl = mapEl.querySelector<SVGSVGElement>(".leaflet-overlay-pane > svg");
-  if (svgEl) {
-    const svgRect = svgEl.getBoundingClientRect();
-    const ox = svgRect.left - mapRect.left;
-    const oy = svgRect.top  - mapRect.top;
-
-    const clone = svgEl.cloneNode(true) as SVGSVGElement;
-    clone.setAttribute("width",  String(svgRect.width));
-    clone.setAttribute("height", String(svgRect.height));
-
-    const svgStr = new XMLSerializer().serializeToString(clone);
-    const blob   = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
-    const url    = URL.createObjectURL(blob);
-
-    await new Promise<void>(resolve => {
-      const img = new Image();
-      img.onload = () => {
-        try { ctx.drawImage(img, ox, oy, svgRect.width, svgRect.height); } catch {}
-        URL.revokeObjectURL(url);
-        resolve();
-      };
-      img.onerror = () => { URL.revokeObjectURL(url); resolve(); };
-      img.src = url;
-    });
-  }
-
-  // ── 3. Pole circles (HTML divIcon markers — not in SVG, drawn manually) ─
-  allPoles.forEach(latlng => {
-    const pt = latLngToPoint(latlng);
-    if (pt.x < -30 || pt.x > W + 30 || pt.y < -30 || pt.y > H + 30) return;
-    ctx.beginPath();
-    ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
-    ctx.fillStyle   = "#ffffff";
-    ctx.fill();
-    ctx.strokeStyle = "#1e40af";
-    ctx.lineWidth   = 2;
-    ctx.stroke();
+  // Project to a flat cartesian plane (correct aspect ratio for small areas)
+  const toFlat = (lat: number, lng: number) => ({
+    x: (lng - minLng) * cos,
+    y: -(lat - minLat),           // flip so north = up
   });
 
-  // ── 4. Export ─────────────────────────────────────────────────────────
-  return canvas.toDataURL("image/jpeg", 0.92);
+  const flatAll = allCoords.map(([la, ln]) => toFlat(la, ln));
+  const fxArr  = flatAll.map(f => f.x);
+  const fyArr  = flatAll.map(f => f.y);
+  const minFX  = Math.min(...fxArr), maxFX = Math.max(...fxArr);
+  const minFY  = Math.min(...fyArr), maxFY = Math.max(...fyArr);
+  const dFX = (maxFX - minFX) || 0.0001;
+  const dFY = (maxFY - minFY) || 0.0001;
+
+  const PAD  = 0.14; // 14% padding each side
+  const useW = CW * (1 - 2 * PAD);
+  const useH = CH * (1 - 2 * PAD);
+
+  // Uniform scale: fit the larger dimension
+  const s = Math.min(useW / dFX, useH / dFY);
+
+  // Centre the drawing
+  const drawW  = dFX * s;
+  const drawH  = dFY * s;
+  const baseX  = (CW - drawW) / 2 - minFX * s;
+  const baseY  = (CH - drawH) / 2 - minFY * s;
+
+  const project = (lat: number, lng: number): [number, number] => {
+    const f = toFlat(lat, lng);
+    return [f.x * s + baseX, f.y * s + baseY];
+  };
+
+  // ── Background ───────────────────────────────────────────────────────────
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, CW, CH);
+
+  // Subtle dot grid
+  ctx.fillStyle = "#e2e8f0";
+  for (let gx = 20; gx < CW; gx += 24) {
+    for (let gy = 20; gy < CH; gy += 24) {
+      ctx.beginPath();
+      ctx.arc(gx, gy, 0.7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // ── Draw layers ──────────────────────────────────────────────────────────
+  layers.forEach(layer => {
+    const isExisting = layer.statusJaringan === "Existing";
+    const lineColor  = isExisting ? "#374151" : "#2563eb";
+    const poleStroke = isExisting ? "#374151" : "#1e40af";
+
+    // Road guide (route centerline — golden road style)
+    if (layer.line.length > 1) {
+      const pts = layer.line.map(([la, ln]) => project(la, ln));
+      // Outer road fill
+      ctx.beginPath();
+      pts.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
+      ctx.strokeStyle = "#fbbf24";
+      ctx.lineWidth   = 14;
+      ctx.lineCap     = "round";
+      ctx.lineJoin    = "round";
+      ctx.globalAlpha = 0.25;
+      ctx.stroke();
+      // Inner road fill
+      ctx.beginPath();
+      pts.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
+      ctx.strokeStyle = "#fde68a";
+      ctx.lineWidth   = 8;
+      ctx.globalAlpha = 0.35;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // Network line (pole-to-pole)
+    if (layer.poles.length > 1) {
+      const pts = layer.poles.map(([la, ln]) => project(la, ln));
+      ctx.beginPath();
+      pts.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth   = 2.5;
+      ctx.lineCap     = "round";
+      ctx.lineJoin    = "round";
+      ctx.setLineDash(isExisting ? [] : [10, 5]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Distance labels
+    ctx.font = "bold 7.5px 'Helvetica Neue', Arial, sans-serif";
+    ctx.textAlign = "center";
+    for (let i = 0; i < layer.poles.length - 1; i++) {
+      const [x1, y1] = project(layer.poles[i][0],   layer.poles[i][1]);
+      const [x2, y2] = project(layer.poles[i+1][0], layer.poles[i+1][1]);
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
+      const dist = haversineMeters(layer.poles[i][0], layer.poles[i][1], layer.poles[i+1][0], layer.poles[i+1][1]);
+      const label = `${Math.round(dist)} m`;
+
+      // Angle of line for placing label above
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      const perpX = -Math.sin(angle) * 11;
+      const perpY =  Math.cos(angle) * 11;
+      const lx = mx + perpX;
+      const ly = my + perpY;
+
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = "rgba(255,255,255,0.88)";
+      ctx.fillRect(lx - tw / 2 - 2, ly - 7, tw + 4, 10);
+      ctx.fillStyle = lineColor;
+      ctx.fillText(label, lx, ly + 1);
+    }
+
+    // Poles
+    layer.poles.forEach(([la, ln], idx) => {
+      const [px, py] = project(la, ln);
+      const pt       = layer.poleTypes[idx];
+      const type     = pt?.short || "A1";
+      const color    = TYPE_COLOR[type] ?? "#374151";
+
+      // Shadow
+      ctx.beginPath();
+      ctx.arc(px, py, 7.5, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(0,0,0,0.10)";
+      ctx.fill();
+
+      // White fill
+      ctx.beginPath();
+      ctx.arc(px, py, 6.5, 0, Math.PI * 2);
+      ctx.fillStyle = "#ffffff";
+      ctx.fill();
+      ctx.strokeStyle = poleStroke;
+      ctx.lineWidth   = 2;
+      ctx.stroke();
+
+      // Construction type label below pole
+      ctx.font      = "bold 7px 'Helvetica Neue', Arial, sans-serif";
+      ctx.fillStyle = color;
+      ctx.textAlign = "center";
+      ctx.fillText(type, px, py + 17);
+    });
+  });
+
+  // ── Legend (bottom-left) ─────────────────────────────────────────────────
+  const lx = 10, ly = CH - 38;
+  ctx.fillStyle = "rgba(255,255,255,0.90)";
+  ctx.beginPath();
+  ctx.roundRect(lx, ly, 130, 32, 4);
+  ctx.fill();
+  ctx.strokeStyle = "#cbd5e1";
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+
+  const legendItems = [
+    { dash: false, color: "#374151", label: "Jaringan Existing" },
+    { dash: true,  color: "#2563eb", label: "Jaringan Perluasan" },
+  ];
+  ctx.font = "10px Arial, sans-serif";
+  legendItems.forEach(({ dash, color, label }, i) => {
+    const iy = ly + 11 + i * 14;
+    ctx.beginPath();
+    ctx.setLineDash(dash ? [5, 3] : []);
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 2;
+    ctx.moveTo(lx + 6,  iy);
+    ctx.lineTo(lx + 24, iy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "#374151";
+    ctx.fillText(label, lx + 28, iy + 3.5);
+  });
 }
+
+// ── Main export function ───────────────────────────────────────────────────
 
 export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
   const { default: jsPDF } = await import("jspdf");
 
   const {
-    mapEl, projectTitle, latLngToPoint, allPoles,
+    projectTitle, layers,
     poles, poleData, effectiveSchoors, gardus,
     jenisJaringan, statusJaringan, totalLengthM,
     tinggiTiang, materialTiang, jarakGawang, kondukturUkuran,
@@ -159,11 +287,16 @@ export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
 
   // ── Build stats ────────────────────────────────────────────────────────────
   const hasDraft = poles.length > 0;
+
   const draftKonstruksi: Record<string, number> = {};
   poleData.forEach(pd => {
-    const { short } = getTypeFields(pd, jenisJaringan);
-    const k = short || "—";
-    draftKonstruksi[k] = (draftKonstruksi[k] ?? 0) + 1;
+    const k =
+      jenisJaringan.includes("SKUTR") || jenisJaringan.includes("Underbuild") ? pd.jtrTypeShort
+      : jenisJaringan === "SKUTM" ? pd.skutmTypeShort
+      : jenisJaringan === "SKTM" || jenisJaringan === "SKTR" ? pd.kabelTypeShort
+      : pd.jtmTypeShort;
+    const key = k || "—";
+    draftKonstruksi[key] = (draftKonstruksi[key] ?? 0) + 1;
   });
 
   const allKonstruksi: Record<string, number> = { ...draftKonstruksi };
@@ -179,10 +312,10 @@ export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
       jenisJaringan, statusJaringan,
       polesCount: poles.length - activeBranchCount, lengthM: totalLengthM,
       schoors: {
-        treck:     Object.values(effectiveSchoors).filter(s => s.jenis === "Treck").length,
-        druck:     Object.values(effectiveSchoors).filter(s => s.jenis === "Druck").length,
-        kontramast:Object.values(effectiveSchoors).filter(s => s.jenis === "Kontramast").length,
-        total:     Object.keys(effectiveSchoors).length,
+        treck:      Object.values(effectiveSchoors).filter(s => s.jenis === "Treck").length,
+        druck:      Object.values(effectiveSchoors).filter(s => s.jenis === "Druck").length,
+        kontramast: Object.values(effectiveSchoors).filter(s => s.jenis === "Kontramast").length,
+        total:      Object.keys(effectiveSchoors).length,
       },
       garduCount: Object.keys(gardus).length,
       kondukturUkuran, tinggiTiang, materialTiang,
@@ -202,35 +335,37 @@ export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
   const arresterCount   = poleData.filter(pd => pd.isGrounded).length;
   const firstStat       = allStats[0];
 
-  // ── Capture map (no html2canvas) ──────────────────────────────────────────
-  const imgData = await captureLeafletMap(mapEl, latLngToPoint, allPoles);
+  // ── Draw schematic to canvas ───────────────────────────────────────────────
+  const PW = 297, PH = 210, RP = 88, MW = PW - RP;
+  const SCALE = 3; // px per mm
+
+  const canvas   = document.createElement("canvas");
+  canvas.width   = MW * SCALE;
+  canvas.height  = PH * SCALE;
+  canvas.getContext("2d")!.scale(SCALE, SCALE);
+  drawSchematic(canvas, layers, SCALE);
+  const imgData  = canvas.toDataURL("image/jpeg", 0.95);
 
   // ── PDF setup ──────────────────────────────────────────────────────────────
   const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-  const PW = 297;
-  const PH = 210;
-  const RP = 88;
-  const MW = PW - RP;
 
-  // Map
   pdf.addImage(imgData, "JPEG", 0, 0, MW, PH);
-  pdf.setDrawColor(0, 0, 0);
+  pdf.setDrawColor(0);
   pdf.setLineWidth(0.3);
   pdf.rect(0, 0, MW, PH);
 
   // Right panel background
+  const rx = MW;
   pdf.setFillColor(248, 250, 255);
-  pdf.rect(MW, 0, RP, PH, "F");
+  pdf.rect(rx, 0, RP, PH, "F");
 
   let y = 0;
-  const rx = MW;
 
-  // ── 1. PLN Header ─────────────────────────────────────────────────────────
+  // ── PLN Header ────────────────────────────────────────────────────────────
   pdf.setFillColor(15, 40, 100);
   pdf.rect(rx, y, RP, 18, "F");
   pdf.setFillColor(59, 130, 246);
   pdf.rect(rx, y, RP, 1.2, "F");
-
   pdf.setTextColor(255, 255, 255);
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(8);
@@ -242,12 +377,11 @@ export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
   pdf.text("SPARK — Sistem Pemetaan Pintar Rencana Kelistrikan", rx + RP / 2, y + 16, { align: "center" });
   y += 18;
 
-  // ── 2. Project Title ──────────────────────────────────────────────────────
+  // ── Project Title ─────────────────────────────────────────────────────────
   pdf.setFillColor(235, 242, 255);
   pdf.rect(rx, y, RP, 20, "F");
   pdf.setFillColor(59, 130, 246);
   pdf.rect(rx, y, 1.5, 20, "F");
-
   pdf.setTextColor(20, 40, 100);
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(8);
@@ -259,7 +393,7 @@ export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
   pdf.text(`${jenisJaringan}  ·  ${statusJaringan}`, rx + RP / 2, y + 17, { align: "center" });
   y += 20;
 
-  // ── 3. Signer Block ───────────────────────────────────────────────────────
+  // ── Signer Block ──────────────────────────────────────────────────────────
   const SH = 9;
   ["Disurvey / Digambar", "Diperiksa", "Disetujui"].forEach((label, i) => {
     const sy = y + i * SH;
@@ -277,7 +411,7 @@ export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
   });
   y += 3 * SH;
 
-  // ── 4. Drawing Info ───────────────────────────────────────────────────────
+  // ── Drawing Info ──────────────────────────────────────────────────────────
   pdf.setFillColor(220, 232, 255);
   pdf.rect(rx, y, RP, 9, "F");
   pdf.setDrawColor(180, 200, 240);
@@ -291,73 +425,51 @@ export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
   pdf.text(`Ukuran : A4       Gambar : 1/1`, rx + 3, y + 8);
   y += 9;
 
-  // ── 5. BOM / Uraian Table ─────────────────────────────────────────────────
-  const C_SIM   = rx + 1;
-  const C_SIM_W = 14;
-  const C_UAI   = rx + C_SIM_W + 1;
-  const C_UAI_W = RP - C_SIM_W - 18;
-  const C_VOL   = rx + RP - 17;
-  const C_VOL_W = 10;
+  // ── BOM Table ─────────────────────────────────────────────────────────────
+  const C_SIM   = rx + 1, C_SIM_W = 14;
+  const C_UAI   = rx + C_SIM_W + 1, C_UAI_W = RP - C_SIM_W - 18;
+  const C_VOL   = rx + RP - 17, C_VOL_W = 10;
   const C_SAT   = rx + RP - 7;
 
-  // Table header
   pdf.setFillColor(15, 40, 100);
   pdf.rect(rx, y, RP, 7, "F");
   pdf.setTextColor(255, 255, 255);
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(5.5);
-  pdf.text("SIMBOL",       C_SIM + C_SIM_W / 2, y + 4.5, { align: "center" });
+  pdf.text("SIMBOL",           C_SIM + C_SIM_W / 2, y + 4.5, { align: "center" });
   pdf.text("U  R  A  I  A  N", C_UAI + C_UAI_W / 2, y + 4.5, { align: "center" });
-  pdf.text("VOL",          C_VOL + C_VOL_W / 2, y + 4.5, { align: "center" });
-  pdf.text("SAT",          C_SAT + 2.5,          y + 4.5, { align: "center" });
+  pdf.text("VOL",              C_VOL + C_VOL_W / 2, y + 4.5, { align: "center" });
+  pdf.text("SAT",              C_SAT + 2.5,          y + 4.5, { align: "center" });
   y += 7;
 
-  // BOM rows
   interface BomRow { simbol: string; uraian: string; vol: string; sat: string; bold?: boolean }
   const rows: BomRow[] = [];
 
-  rows.push({
-    simbol: "●",
-    uraian: `Tiang ${firstStat?.materialTiang ?? "Beton"} ${firstStat?.tinggiTiang ?? 12}m`,
-    vol: `${totalPoles}`, sat: "BTG",
-  });
+  rows.push({ simbol: "●", uraian: `Tiang ${firstStat?.materialTiang ?? "Beton"} ${firstStat?.tinggiTiang ?? 12}m`, vol: `${totalPoles}`, sat: "BTG" });
 
-  const existingLen = savedLayerStats.filter(l => l.statusJaringan === "Existing")
-    .reduce((s, l) => s + l.lengthM, 0);
-  if (existingLen > 0) {
-    rows.push({ simbol: "——", uraian: `${jenisJaringan} Existing`, vol: "-", sat: "KMS" });
-  }
+  const existingLen = savedLayerStats.filter(l => l.statusJaringan === "Existing").reduce((s, l) => s + l.lengthM, 0);
+  if (existingLen > 0) rows.push({ simbol: "——", uraian: `${jenisJaringan} Existing`, vol: "-", sat: "KMS" });
 
   const newLen = allStats.filter(l => l.statusJaringan !== "Existing").reduce((s, l) => s + l.lengthM, 0);
   if (newLen > 0) {
-    const cond = CONDUCTOR_TIPE[jenisJaringan] ?? "AAACS";
-    const ukuran = firstStat?.kondukturUkuran ?? kondukturUkuran;
-    rows.push({
-      simbol: "- -",
-      uraian: `Ren. ${jenisJaringan} ${cond} ${ukuran}mm`,
-      vol: `${(newLen / 1000).toFixed(3)}`, sat: "KMS",
-    });
+    rows.push({ simbol: "- -", uraian: `Ren. ${jenisJaringan} ${CONDUCTOR_TIPE[jenisJaringan] ?? "AAACS"} ${firstStat?.kondukturUkuran ?? kondukturUkuran}mm`, vol: `${(newLen / 1000).toFixed(3)}`, sat: "KMS" });
   }
-
   if (existingLen > 0 && newLen > 0) {
     rows.push({ simbol: "", uraian: "Total Panjang Jaringan", vol: `${(totalLength / 1000).toFixed(3)}`, sat: "KMS", bold: true });
   }
 
   KONSTRUKSI_ORDER.forEach(k => {
-    if (allKonstruksi[k]) {
-      rows.push({ simbol: k, uraian: KONSTRUKSI_LABEL[k] ?? k, vol: `${allKonstruksi[k]}`, sat: "SET" });
-    }
+    if (allKonstruksi[k]) rows.push({ simbol: k, uraian: KONSTRUKSI_LABEL[k] ?? k, vol: `${allKonstruksi[k]}`, sat: "SET" });
   });
 
-  if (totalTreck > 0)      rows.push({ simbol: "O→",  uraian: "Treck Skoor",              vol: `${totalTreck}`,      sat: "SET" });
-  if (totalDruck > 0)      rows.push({ simbol: "O+",  uraian: "Druck Skoor",              vol: `${totalDruck}`,      sat: "SET" });
-  if (totalKontramast > 0) rows.push({ simbol: "—O→", uraian: "Kontramast",               vol: `${totalKontramast}`, sat: "SET" });
-  if (arresterCount > 0)   rows.push({ simbol: "⚡",  uraian: "Lightning Arrester (LA)",  vol: `${arresterCount}`,   sat: "SET" });
-  if (totalGardu > 0)      rows.push({ simbol: "🏗",  uraian: "Gardu Distribusi",         vol: `${totalGardu}`,      sat: "SET" });
+  if (totalTreck > 0)      rows.push({ simbol: "O→",  uraian: "Treck Skoor",             vol: `${totalTreck}`,      sat: "SET" });
+  if (totalDruck > 0)      rows.push({ simbol: "O+",  uraian: "Druck Skoor",             vol: `${totalDruck}`,      sat: "SET" });
+  if (totalKontramast > 0) rows.push({ simbol: "—O→", uraian: "Kontramast",              vol: `${totalKontramast}`, sat: "SET" });
+  if (arresterCount > 0)   rows.push({ simbol: "⚡",  uraian: "Lightning Arrester (LA)", vol: `${arresterCount}`,   sat: "SET" });
+  if (totalGardu > 0)      rows.push({ simbol: "🏗",  uraian: "Gardu Distribusi",        vol: `${totalGardu}`,      sat: "SET" });
 
   const tableTop = y;
-  const ROW_H = 5.8;
-
+  const ROW_H    = 5.8;
   rows.forEach((row, i) => {
     const ry = y + i * ROW_H;
     if (ry + ROW_H > PH - 1) return;
@@ -366,7 +478,6 @@ export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
     pdf.setDrawColor(215, 225, 245);
     pdf.setLineWidth(0.15);
     pdf.line(rx, ry + ROW_H, rx + RP, ry + ROW_H);
-
     pdf.setFont("helvetica", row.bold ? "bold" : "normal");
     pdf.setFontSize(5.2);
     pdf.setTextColor(40, 50, 90);
@@ -388,13 +499,11 @@ export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
   pdf.line(C_VOL - 1, tableTop - 7, C_VOL - 1, tableBottom);
   pdf.line(C_SAT - 1, tableTop - 7, C_SAT - 1, tableBottom);
 
-  // Outer borders
   pdf.setDrawColor(0, 20, 80);
   pdf.setLineWidth(0.5);
   pdf.rect(rx, 0, RP, PH);
   pdf.setLineWidth(0.8);
   pdf.rect(0, 0, PW, PH);
 
-  const filename = `SPARK_${projectTitle.replace(/[^a-zA-Z0-9\s]/g, "").trim().replace(/\s+/g, "_")}.pdf`;
-  pdf.save(filename);
+  pdf.save(`SPARK_${projectTitle.replace(/[^a-zA-Z0-9\s]/g, "").trim().replace(/\s+/g, "_")}.pdf`);
 }

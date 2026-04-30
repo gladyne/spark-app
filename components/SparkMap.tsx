@@ -9,7 +9,7 @@ import * as turf from "@turf/turf";
 import { useSearch } from "../hooks/useSearch";
 import type { GarduConfig, SchoorConfig, NetworkLayer, Connection, SnapInfo, ConnectFirstState, JunctionInfo, DragSource, DragTarget } from "../types/spark";
 import { haversineMeters } from "../lib/geo";
-import { countPoleTypes } from "../lib/computePoleData";
+import { countPoleTypes, computePoleTypes } from "../lib/computePoleData";
 import { buildGarduSvg, buildSchoorSvg } from "../lib/svgUtils";
 
 import MapClickHandler from "./map/MapClickHandler";
@@ -1842,25 +1842,36 @@ export default function SparkMap() {
           </button>
           <button
             onClick={async () => {
-              const mapEl = mapRef.current?.getContainer();
-              if (!mapEl || (poles.length === 0 && savedLayers.length === 0)) return;
+              if (poles.length === 0 && savedLayers.length === 0) return;
               setIsPdfLoading(true);
               try {
                 const projectTitle = savedLayers.length > 0
                   ? savedLayers.map(l => l.label).join(" + ")
                   : `${statusJaringan} ${jenisJaringan}`;
-                const map = mapRef.current!;
-                const allPoles: [number, number][] = [
-                  ...poles,
-                  ...savedLayers.flatMap(l => l.poles),
+
+                // Build LayerDrawData for each layer (active draft + saved)
+                const layers = [
+                  ...(poles.length > 0 ? [{
+                    id: -1, label: "Draft Aktif",
+                    poles, line,
+                    poleTypes: computePoleTypes(poles, jenisJaringan, konstruksiOverrides, activeBranchIdxs),
+                    jenisJaringan, statusJaringan,
+                  }] : []),
+                  ...savedLayers.map(l => {
+                    const branchIdxs = new Set(
+                      junctions.filter(j => j.branchLayerId === l.id).map(j => j.branchPoleIdx)
+                    );
+                    return {
+                      id: l.id, label: l.label,
+                      poles: l.poles, line: l.line,
+                      poleTypes: computePoleTypes(l.poles, l.jenisJaringan, l.konstruksiOverrides ?? {}, branchIdxs),
+                      jenisJaringan: l.jenisJaringan, statusJaringan: l.statusJaringan,
+                    };
+                  }),
                 ];
+
                 await exportToPdf({
-                  mapEl, projectTitle,
-                  latLngToPoint: (latlng) => {
-                    const pt = map.latLngToContainerPoint(L.latLng(latlng[0], latlng[1]));
-                    return { x: pt.x, y: pt.y };
-                  },
-                  allPoles,
+                  projectTitle, layers,
                   poles, poleData, effectiveSchoors, gardus,
                   jenisJaringan, statusJaringan, totalLengthM,
                   tinggiTiang, materialTiang, jarakGawang, kondukturUkuran,
