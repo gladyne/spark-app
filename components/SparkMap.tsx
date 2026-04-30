@@ -30,6 +30,7 @@ import TentikanTitikCard from "./sidebar/TentikanTitikCard";
 import LayerManager from "./sidebar/LayerManager";
 import ExecCard from "./sidebar/ExecCard";
 import RekapModal, { type LayerStat } from "./modals/RekapModal";
+import { exportToPdf } from "../lib/exportPdf";
 
 const DefaultIcon = L.icon({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -139,6 +140,7 @@ export default function SparkMap() {
   const [routingMode, setRoutingMode] = useState<"jalan" | "lurus">("jalan");
   const [autoSchoorThreshold, setAutoSchoorThreshold] = useState(15);
   const [rekapOpen, setRekapOpen] = useState(false);
+  const [isPdfLoading, setIsPdfLoading] = useState(false);
 
 
   // ─── ETAP-style palette ───────────────────────────────────────────────────
@@ -1823,18 +1825,64 @@ export default function SparkMap() {
           />
         )}
 
-        <button
-          onClick={() => setRekapOpen(true)}
-          disabled={poles.length === 0 && savedLayers.length === 0}
-          className={`w-full py-3 px-4 rounded-2xl font-bold text-sm flex items-center justify-center gap-2.5 transition-all
-            ${poles.length > 0 || savedLayers.length > 0
-              ? "text-white bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-600 shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 active:shadow-md"
-              : "text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed"
-            }`}
-        >
-          <span>📋</span> Rekap Konstruksi Gambar
-          {poles.length === 0 && savedLayers.length === 0 && <span className="text-[10px] font-normal">(belum ada tiang)</span>}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setRekapOpen(true)}
+            disabled={poles.length === 0 && savedLayers.length === 0}
+            className={`flex-1 py-3 px-3 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all
+              ${poles.length > 0 || savedLayers.length > 0
+                ? "text-white bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-600 shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 active:shadow-md"
+                : "text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed"
+              }`}
+          >
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+            Rekap
+          </button>
+          <button
+            onClick={async () => {
+              const mapEl = mapRef.current?.getContainer();
+              if (!mapEl || (poles.length === 0 && savedLayers.length === 0)) return;
+              setIsPdfLoading(true);
+              try {
+                const projectTitle = savedLayers.length > 0
+                  ? savedLayers.map(l => l.label).join(" + ")
+                  : `${statusJaringan} ${jenisJaringan}`;
+                await exportToPdf({
+                  mapEl, projectTitle,
+                  poles, poleData, effectiveSchoors, gardus,
+                  jenisJaringan, statusJaringan, totalLengthM,
+                  tinggiTiang, materialTiang, jarakGawang, kondukturUkuran,
+                  activeBranchCount: activeBranchIdxs.size,
+                  savedLayerStats,
+                });
+              } finally {
+                setIsPdfLoading(false);
+              }
+            }}
+            disabled={isPdfLoading || (poles.length === 0 && savedLayers.length === 0)}
+            className={`flex-1 py-3 px-3 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all
+              ${poles.length > 0 || savedLayers.length > 0
+                ? isPdfLoading
+                  ? "text-slate-400 bg-slate-100 border border-slate-200 cursor-wait"
+                  : "text-white bg-gradient-to-r from-emerald-500 to-green-600 shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 active:shadow-md"
+                : "text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed"
+              }`}
+          >
+            {isPdfLoading ? (
+              <svg className="w-4 h-4 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+              </svg>
+            ) : (
+              <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            )}
+            {isPdfLoading ? "..." : "PDF"}
+          </button>
+        </div>
 
         <NetworkSettings
           jenisJaringan={jenisJaringan} setJenisJaringan={setJenisJaringan}
