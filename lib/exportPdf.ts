@@ -1,5 +1,3 @@
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
 import type { LayerStat } from "../components/modals/RekapModal";
 import type { PoleData, SchoorConfig, GarduConfig } from "../types/spark";
 
@@ -56,6 +54,12 @@ export interface ExportPdfOptions {
 }
 
 export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
+  // Dynamic imports — avoid SSR issues with browser-only libs
+  const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+    import("jspdf"),
+    import("html2canvas"),
+  ]);
+
   const {
     mapEl, projectTitle,
     poles, poleData, effectiveSchoors, gardus,

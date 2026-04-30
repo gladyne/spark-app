@@ -1857,6 +1857,9 @@ export default function SparkMap() {
                   activeBranchCount: activeBranchIdxs.size,
                   savedLayerStats,
                 });
+              } catch (err) {
+                console.error("[exportPdf] error:", err);
+                alert("Gagal membuat PDF: " + (err instanceof Error ? err.message : String(err)));
               } finally {
                 setIsPdfLoading(false);
               }
