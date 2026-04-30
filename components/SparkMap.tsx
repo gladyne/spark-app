@@ -1764,7 +1764,15 @@ export default function SparkMap() {
           <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-blue-500/20 blur-2xl" />
           <div className="relative flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/30">
-              <span className="text-white font-black text-lg tracking-tighter">S</span>
+              <svg viewBox="0 0 32 32" className="w-6 h-6" fill="none">
+                <defs>
+                  <linearGradient id="sb-bolt" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#FDE68A"/>
+                    <stop offset="100%" stopColor="#F59E0B"/>
+                  </linearGradient>
+                </defs>
+                <path d="M18.5 4L10 17.5H16L13.5 28L23 14.5H17L18.5 4Z" fill="url(#sb-bolt)"/>
+              </svg>
             </div>
             <div>
               <h1 className="text-2xl font-black text-white tracking-tight leading-none">SPARK</h1>
