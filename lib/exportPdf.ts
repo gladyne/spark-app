@@ -78,31 +78,29 @@ async function captureLeafletMap(
   ctx.fillStyle = "#e8eaed";
   ctx.fillRect(0, 0, W, H);
 
-  // ── 1. Tile images ──────────────────────────────────────────────────────
+  // ── 1. Tile images via fetch (avoids tainted-canvas CORS issue) ─────────
   const tiles = Array.from(
     mapEl.querySelectorAll<HTMLImageElement>(".leaflet-tile:not(.leaflet-tile-loading)")
   ).filter(t => t.src && t.complete && t.naturalWidth > 0);
 
-  await Promise.all(tiles.map(tile => new Promise<void>(resolve => {
+  await Promise.all(tiles.map(async tile => {
     const tRect = tile.getBoundingClientRect();
     const x = tRect.left - mapRect.left;
     const y = tRect.top  - mapRect.top;
     const w = tRect.width;
     const h = tRect.height;
-
-    // Fast path: direct draw (works if same-origin or already CORS-loaded)
     try {
-      ctx.drawImage(tile, x, y, w, h);
-      resolve();
-      return;
-    } catch { /* tainted — try CORS reload */ }
-
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => { try { ctx.drawImage(img, x, y, w, h); } catch { /* still tainted */ } resolve(); };
-    img.onerror = () => resolve();
-    img.src = tile.src;
-  })));
+      const res  = await fetch(tile.src, { mode: "cors" });
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      await new Promise<void>(resolve => {
+        const img = new Image();
+        img.onload  = () => { try { ctx.drawImage(img, x, y, w, h); } catch {} URL.revokeObjectURL(url); resolve(); };
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+        img.src = url;
+      });
+    } catch { /* tile unreachable — skip */ }
+  }));
 
   // ── 2. Leaflet SVG overlay (polylines, schoor SVGs, etc.) ──────────────
   const svgEl = mapEl.querySelector<SVGSVGElement>(".leaflet-overlay-pane > svg");
@@ -144,22 +142,8 @@ async function captureLeafletMap(
     ctx.stroke();
   });
 
-  // ── 4. Export — fallback if canvas is tainted ──────────────────────────
-  try {
-    return canvas.toDataURL("image/jpeg", 0.92);
-  } catch {
-    const fb = document.createElement("canvas");
-    fb.width = 800; fb.height = 600;
-    const fc = fb.getContext("2d")!;
-    fc.fillStyle = "#f1f5f9";
-    fc.fillRect(0, 0, 800, 600);
-    fc.fillStyle = "#94a3b8";
-    fc.font = "bold 18px sans-serif";
-    fc.textAlign = "center";
-    fc.fillText("Peta tidak dapat di-render (CORS restriction)", 400, 280);
-    fc.fillText("Jaringan & uraian tetap tersedia di panel kanan", 400, 310);
-    return fb.toDataURL("image/jpeg", 0.9);
-  }
+  // ── 4. Export ─────────────────────────────────────────────────────────
+  return canvas.toDataURL("image/jpeg", 0.92);
 }
 
 export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
