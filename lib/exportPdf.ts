@@ -18,7 +18,7 @@ const KONSTRUKSI_LABEL: Record<string, string> = {
   "S":         "Suspession Assy",
   "LA":        "Large Angel Assy",
   "FDE":       "Fix Dead End Assy",
-  "BDL+DE":    "Bundle End Protection",
+  "BDL+DE":   "Bundle End Protection",
   "Trm":       "Termination Assy",
   "2xTrm":     "2x Termination Assy",
   "JNT":       "Joint Sleeve",
@@ -38,6 +38,10 @@ function getTypeFields(pd: PoleData, jenis: string): { short: string } {
 export interface ExportPdfOptions {
   mapEl: HTMLElement;
   projectTitle: string;
+  // latlng → container pixel (from mapRef.current.latLngToContainerPoint)
+  latLngToPoint: (latlng: [number, number]) => { x: number; y: number };
+  // all poles to draw (active + all saved layers)
+  allPoles: [number, number][];
   poles: [number, number][];
   poleData: PoleData[];
   effectiveSchoors: Record<number, SchoorConfig>;
@@ -53,22 +57,123 @@ export interface ExportPdfOptions {
   savedLayerStats: LayerStat[];
 }
 
+// ── Manual Leaflet map capture (no html2canvas — avoids oklch CSS parse error) ──
+async function captureLeafletMap(
+  mapEl: HTMLElement,
+  latLngToPoint: (latlng: [number, number]) => { x: number; y: number },
+  allPoles: [number, number][],
+): Promise<string> {
+  const mapRect = mapEl.getBoundingClientRect();
+  const W = Math.round(mapRect.width);
+  const H = Math.round(mapRect.height);
+  const SCALE = 2;
+
+  const canvas = document.createElement("canvas");
+  canvas.width  = W * SCALE;
+  canvas.height = H * SCALE;
+  const ctx = canvas.getContext("2d")!;
+  ctx.scale(SCALE, SCALE);
+
+  // Light map background
+  ctx.fillStyle = "#e8eaed";
+  ctx.fillRect(0, 0, W, H);
+
+  // ── 1. Tile images ──────────────────────────────────────────────────────
+  const tiles = Array.from(
+    mapEl.querySelectorAll<HTMLImageElement>(".leaflet-tile:not(.leaflet-tile-loading)")
+  ).filter(t => t.src && t.complete && t.naturalWidth > 0);
+
+  await Promise.all(tiles.map(tile => new Promise<void>(resolve => {
+    const tRect = tile.getBoundingClientRect();
+    const x = tRect.left - mapRect.left;
+    const y = tRect.top  - mapRect.top;
+    const w = tRect.width;
+    const h = tRect.height;
+
+    // Fast path: direct draw (works if same-origin or already CORS-loaded)
+    try {
+      ctx.drawImage(tile, x, y, w, h);
+      resolve();
+      return;
+    } catch { /* tainted — try CORS reload */ }
+
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => { try { ctx.drawImage(img, x, y, w, h); } catch { /* still tainted */ } resolve(); };
+    img.onerror = () => resolve();
+    img.src = tile.src;
+  })));
+
+  // ── 2. Leaflet SVG overlay (polylines, schoor SVGs, etc.) ──────────────
+  const svgEl = mapEl.querySelector<SVGSVGElement>(".leaflet-overlay-pane > svg");
+  if (svgEl) {
+    const svgRect = svgEl.getBoundingClientRect();
+    const ox = svgRect.left - mapRect.left;
+    const oy = svgRect.top  - mapRect.top;
+
+    const clone = svgEl.cloneNode(true) as SVGSVGElement;
+    clone.setAttribute("width",  String(svgRect.width));
+    clone.setAttribute("height", String(svgRect.height));
+
+    const svgStr = new XMLSerializer().serializeToString(clone);
+    const blob   = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
+    const url    = URL.createObjectURL(blob);
+
+    await new Promise<void>(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        try { ctx.drawImage(img, ox, oy, svgRect.width, svgRect.height); } catch {}
+        URL.revokeObjectURL(url);
+        resolve();
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+      img.src = url;
+    });
+  }
+
+  // ── 3. Pole circles (HTML divIcon markers — not in SVG, drawn manually) ─
+  allPoles.forEach(latlng => {
+    const pt = latLngToPoint(latlng);
+    if (pt.x < -30 || pt.x > W + 30 || pt.y < -30 || pt.y > H + 30) return;
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+    ctx.fillStyle   = "#ffffff";
+    ctx.fill();
+    ctx.strokeStyle = "#1e40af";
+    ctx.lineWidth   = 2;
+    ctx.stroke();
+  });
+
+  // ── 4. Export — fallback if canvas is tainted ──────────────────────────
+  try {
+    return canvas.toDataURL("image/jpeg", 0.92);
+  } catch {
+    const fb = document.createElement("canvas");
+    fb.width = 800; fb.height = 600;
+    const fc = fb.getContext("2d")!;
+    fc.fillStyle = "#f1f5f9";
+    fc.fillRect(0, 0, 800, 600);
+    fc.fillStyle = "#94a3b8";
+    fc.font = "bold 18px sans-serif";
+    fc.textAlign = "center";
+    fc.fillText("Peta tidak dapat di-render (CORS restriction)", 400, 280);
+    fc.fillText("Jaringan & uraian tetap tersedia di panel kanan", 400, 310);
+    return fb.toDataURL("image/jpeg", 0.9);
+  }
+}
+
 export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
-  // Dynamic imports — avoid SSR issues with browser-only libs
-  const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
-    import("jspdf"),
-    import("html2canvas"),
-  ]);
+  const { default: jsPDF } = await import("jspdf");
 
   const {
-    mapEl, projectTitle,
+    mapEl, projectTitle, latLngToPoint, allPoles,
     poles, poleData, effectiveSchoors, gardus,
     jenisJaringan, statusJaringan, totalLengthM,
     tinggiTiang, materialTiang, jarakGawang, kondukturUkuran,
     activeBranchCount, savedLayerStats,
   } = opts;
 
-  // ── Build draftStat ──────────────────────────────────────────────────────
+  // ── Build stats ────────────────────────────────────────────────────────────
   const hasDraft = poles.length > 0;
   const draftKonstruksi: Record<string, number> = {};
   poleData.forEach(pd => {
@@ -77,13 +182,12 @@ export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
     draftKonstruksi[k] = (draftKonstruksi[k] ?? 0) + 1;
   });
 
-  // Merge konstruksi across all layers
   const allKonstruksi: Record<string, number> = { ...draftKonstruksi };
-  savedLayerStats.forEach(l => {
+  savedLayerStats.forEach(l =>
     Object.entries(l.konstruksiTypes).forEach(([k, { count }]) => {
       allKonstruksi[k] = (allKonstruksi[k] ?? 0) + count;
-    });
-  });
+    })
+  );
 
   const allStats: LayerStat[] = [
     ...(hasDraft ? [{
@@ -91,10 +195,10 @@ export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
       jenisJaringan, statusJaringan,
       polesCount: poles.length - activeBranchCount, lengthM: totalLengthM,
       schoors: {
-        treck: Object.values(effectiveSchoors).filter(s => s.jenis === "Treck").length,
-        druck: Object.values(effectiveSchoors).filter(s => s.jenis === "Druck").length,
-        kontramast: Object.values(effectiveSchoors).filter(s => s.jenis === "Kontramast").length,
-        total: Object.keys(effectiveSchoors).length,
+        treck:     Object.values(effectiveSchoors).filter(s => s.jenis === "Treck").length,
+        druck:     Object.values(effectiveSchoors).filter(s => s.jenis === "Druck").length,
+        kontramast:Object.values(effectiveSchoors).filter(s => s.jenis === "Kontramast").length,
+        total:     Object.keys(effectiveSchoors).length,
       },
       garduCount: Object.keys(gardus).length,
       kondukturUkuran, tinggiTiang, materialTiang,
@@ -114,78 +218,32 @@ export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
   const arresterCount   = poleData.filter(pd => pd.isGrounded).length;
   const firstStat       = allStats[0];
 
-  // ── Capture map ──────────────────────────────────────────────────────────
-  // html2canvas cannot parse oklch/lab (Tailwind v4 default). Fix:
-  // 1. Patch inline <style> tags, 2. Fetch+patch external <link> stylesheets.
-  const fixCss = (css: string) =>
-    css
-      .replace(/:\s*oklch\([^)]+\)/g, ": inherit")
-      .replace(/:\s*\blab\([^)]+\)/g, ": inherit")
-      .replace(/:\s*\blch\([^)]+\)/g, ": inherit")
-      .replace(/:\s*oklab\([^)]+\)/g, ": inherit");
+  // ── Capture map (no html2canvas) ──────────────────────────────────────────
+  const imgData = await captureLeafletMap(mapEl, latLngToPoint, allPoles);
 
-  const canvas = await html2canvas(mapEl, {
-    useCORS: true,
-    allowTaint: true,
-    scale: 2,
-    logging: false,
-    imageTimeout: 15000,
-    onclone: async (clonedDoc) => {
-      // Patch inline style tags
-      clonedDoc.querySelectorAll("style").forEach(style => {
-        if (style.textContent) style.textContent = fixCss(style.textContent);
-      });
-
-      // Fetch and patch linked stylesheets, then inline them
-      const links = Array.from(
-        clonedDoc.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')
-      );
-      await Promise.all(
-        links.map(async link => {
-          try {
-            const res = await fetch(link.href);
-            const css = fixCss(await res.text());
-            const style = clonedDoc.createElement("style");
-            style.textContent = css;
-            link.parentNode?.replaceChild(style, link);
-          } catch {
-            link.remove(); // remove if unfetchable to avoid parse errors
-          }
-        })
-      );
-    },
-  });
-
-  // ── PDF setup ─────────────────────────────────────────────────────────────
+  // ── PDF setup ──────────────────────────────────────────────────────────────
   const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-  const PW = 297; // page width
-  const PH = 210; // page height
-  const RP = 88;  // right panel width
-  const MW = PW - RP; // map width
+  const PW = 297;
+  const PH = 210;
+  const RP = 88;
+  const MW = PW - RP;
 
-  // ── Map image ─────────────────────────────────────────────────────────────
-  const imgData = canvas.toDataURL("image/jpeg", 0.92);
+  // Map
   pdf.addImage(imgData, "JPEG", 0, 0, MW, PH);
-
-  // Subtle vignette border on map
   pdf.setDrawColor(0, 0, 0);
   pdf.setLineWidth(0.3);
   pdf.rect(0, 0, MW, PH);
 
-  // ── Right panel background ────────────────────────────────────────────────
+  // Right panel background
   pdf.setFillColor(248, 250, 255);
   pdf.rect(MW, 0, RP, PH, "F");
 
   let y = 0;
-  const rx = MW; // right panel left edge
+  const rx = MW;
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // 1. PLN Header
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── 1. PLN Header ─────────────────────────────────────────────────────────
   pdf.setFillColor(15, 40, 100);
   pdf.rect(rx, y, RP, 18, "F");
-
-  // Thin accent line at top
   pdf.setFillColor(59, 130, 246);
   pdf.rect(rx, y, RP, 1.2, "F");
 
@@ -200,64 +258,47 @@ export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
   pdf.text("SPARK — Sistem Pemetaan Pintar Rencana Kelistrikan", rx + RP / 2, y + 16, { align: "center" });
   y += 18;
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // 2. Project Title
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── 2. Project Title ──────────────────────────────────────────────────────
   pdf.setFillColor(235, 242, 255);
   pdf.rect(rx, y, RP, 20, "F");
   pdf.setFillColor(59, 130, 246);
-  pdf.rect(rx, y, 1.5, 20, "F"); // left accent bar
+  pdf.rect(rx, y, 1.5, 20, "F");
 
   pdf.setTextColor(20, 40, 100);
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(8);
   const titleLines = pdf.splitTextToSize(projectTitle.toUpperCase(), RP - 8);
-  const titleY = y + 7 + Math.max(0, (2 - titleLines.length) * 3);
-  pdf.text(titleLines, rx + RP / 2, titleY, { align: "center" });
-
+  pdf.text(titleLines, rx + RP / 2, y + 7 + Math.max(0, (2 - titleLines.length) * 3), { align: "center" });
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(5.5);
   pdf.setTextColor(80, 100, 160);
   pdf.text(`${jenisJaringan}  ·  ${statusJaringan}`, rx + RP / 2, y + 17, { align: "center" });
   y += 20;
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // 3. Signer Block
-  // ─────────────────────────────────────────────────────────────────────────
-  const signerRows = [
-    "Disurvey / Digambar",
-    "Diperiksa",
-    "Disetujui",
-  ];
+  // ── 3. Signer Block ───────────────────────────────────────────────────────
   const SH = 9;
-
-  signerRows.forEach((label, i) => {
+  ["Disurvey / Digambar", "Diperiksa", "Disetujui"].forEach((label, i) => {
     const sy = y + i * SH;
     pdf.setFillColor(i % 2 === 0 ? 250 : 245, 248, 255);
     pdf.rect(rx, sy, RP, SH, "F");
     pdf.setDrawColor(210, 220, 240);
     pdf.setLineWidth(0.2);
     pdf.line(rx, sy + SH, rx + RP, sy + SH);
-
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(5.5);
     pdf.setTextColor(80, 90, 130);
     pdf.text(label, rx + 4, sy + 5.5);
-
     pdf.setTextColor(180, 190, 210);
     pdf.text(":  ............................................", rx + 28, sy + 5.5);
   });
-  y += signerRows.length * SH;
+  y += 3 * SH;
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // 4. Drawing Info Strip
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── 4. Drawing Info ───────────────────────────────────────────────────────
   pdf.setFillColor(220, 232, 255);
   pdf.rect(rx, y, RP, 9, "F");
   pdf.setDrawColor(180, 200, 240);
   pdf.setLineWidth(0.3);
   pdf.line(rx, y + 9, rx + RP, y + 9);
-
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(5.5);
   pdf.setTextColor(30, 50, 110);
@@ -266,17 +307,14 @@ export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
   pdf.text(`Ukuran : A4       Gambar : 1/1`, rx + 3, y + 8);
   y += 9;
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // 5. BOM / Uraian Table
-  // ─────────────────────────────────────────────────────────────────────────
-  // Column x positions within right panel
-  const C_SIMBOL = rx + 1;
-  const C_SIMBOL_W = 14;
-  const C_URAIAN = rx + C_SIMBOL_W + 1;
-  const C_URAIAN_W = RP - C_SIMBOL_W - 18;
-  const C_VOL = rx + RP - 17;
+  // ── 5. BOM / Uraian Table ─────────────────────────────────────────────────
+  const C_SIM   = rx + 1;
+  const C_SIM_W = 14;
+  const C_UAI   = rx + C_SIM_W + 1;
+  const C_UAI_W = RP - C_SIM_W - 18;
+  const C_VOL   = rx + RP - 17;
   const C_VOL_W = 10;
-  const C_SAT = rx + RP - 7;
+  const C_SAT   = rx + RP - 7;
 
   // Table header
   pdf.setFillColor(15, 40, 100);
@@ -284,42 +322,28 @@ export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
   pdf.setTextColor(255, 255, 255);
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(5.5);
-  pdf.text("SIMBOL", C_SIMBOL + C_SIMBOL_W / 2, y + 4.5, { align: "center" });
-  pdf.text("U  R  A  I  A  N", C_URAIAN + C_URAIAN_W / 2, y + 4.5, { align: "center" });
-  pdf.text("VOL", C_VOL + C_VOL_W / 2, y + 4.5, { align: "center" });
-  pdf.text("SAT", C_SAT + 2.5, y + 4.5, { align: "center" });
+  pdf.text("SIMBOL",       C_SIM + C_SIM_W / 2, y + 4.5, { align: "center" });
+  pdf.text("U  R  A  I  A  N", C_UAI + C_UAI_W / 2, y + 4.5, { align: "center" });
+  pdf.text("VOL",          C_VOL + C_VOL_W / 2, y + 4.5, { align: "center" });
+  pdf.text("SAT",          C_SAT + 2.5,          y + 4.5, { align: "center" });
   y += 7;
 
-  // Column divider lines (draw over rows)
-  const drawColDividers = (tableTop: number, tableBottom: number) => {
-    pdf.setDrawColor(180, 200, 230);
-    pdf.setLineWidth(0.2);
-    pdf.line(C_URAIAN - 1, tableTop, C_URAIAN - 1, tableBottom);
-    pdf.line(C_VOL - 1,    tableTop, C_VOL    - 1, tableBottom);
-    pdf.line(C_SAT - 1,    tableTop, C_SAT    - 1, tableBottom);
-  };
-
-  // Build BOM rows
+  // BOM rows
   interface BomRow { simbol: string; uraian: string; vol: string; sat: string; bold?: boolean }
   const rows: BomRow[] = [];
 
-  // Tiang
   rows.push({
     simbol: "●",
     uraian: `Tiang ${firstStat?.materialTiang ?? "Beton"} ${firstStat?.tinggiTiang ?? 12}m`,
     vol: `${totalPoles}`, sat: "BTG",
   });
 
-  // Existing line (if any existing layer)
   const existingLen = savedLayerStats.filter(l => l.statusJaringan === "Existing")
     .reduce((s, l) => s + l.lengthM, 0);
   if (existingLen > 0) {
-    rows.push({
-      simbol: "——", uraian: `${jenisJaringan} Existing`, vol: "-", sat: "KMS",
-    });
+    rows.push({ simbol: "——", uraian: `${jenisJaringan} Existing`, vol: "-", sat: "KMS" });
   }
 
-  // New/Perluasan line
   const newLen = allStats.filter(l => l.statusJaringan !== "Existing").reduce((s, l) => s + l.lengthM, 0);
   if (newLen > 0) {
     const cond = CONDUCTOR_TIPE[jenisJaringan] ?? "AAACS";
@@ -331,39 +355,28 @@ export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
     });
   }
 
-  // Total length (if mixed)
   if (existingLen > 0 && newLen > 0) {
-    rows.push({
-      simbol: "",
-      uraian: `Total Panjang Jaringan`,
-      vol: `${(totalLength / 1000).toFixed(3)}`, sat: "KMS", bold: true,
-    });
+    rows.push({ simbol: "", uraian: "Total Panjang Jaringan", vol: `${(totalLength / 1000).toFixed(3)}`, sat: "KMS", bold: true });
   }
 
-  // Construction types
   KONSTRUKSI_ORDER.forEach(k => {
     if (allKonstruksi[k]) {
       rows.push({ simbol: k, uraian: KONSTRUKSI_LABEL[k] ?? k, vol: `${allKonstruksi[k]}`, sat: "SET" });
     }
   });
 
-  // Schoor
-  if (totalTreck > 0)      rows.push({ simbol: "O→",  uraian: "Treck Skoor",  vol: `${totalTreck}`,      sat: "SET" });
-  if (totalDruck > 0)      rows.push({ simbol: "O+",  uraian: "Druck Skoor",  vol: `${totalDruck}`,      sat: "SET" });
-  if (totalKontramast > 0) rows.push({ simbol: "—O→", uraian: "Kontramast",   vol: `${totalKontramast}`, sat: "SET" });
-
-  // Arrester
-  if (arresterCount > 0) rows.push({ simbol: "⚡", uraian: "Lightning Arrester (LA)", vol: `${arresterCount}`, sat: "SET" });
-
-  // Gardu
-  if (totalGardu > 0) rows.push({ simbol: "🏗", uraian: "Gardu Distribusi", vol: `${totalGardu}`, sat: "SET" });
+  if (totalTreck > 0)      rows.push({ simbol: "O→",  uraian: "Treck Skoor",              vol: `${totalTreck}`,      sat: "SET" });
+  if (totalDruck > 0)      rows.push({ simbol: "O+",  uraian: "Druck Skoor",              vol: `${totalDruck}`,      sat: "SET" });
+  if (totalKontramast > 0) rows.push({ simbol: "—O→", uraian: "Kontramast",               vol: `${totalKontramast}`, sat: "SET" });
+  if (arresterCount > 0)   rows.push({ simbol: "⚡",  uraian: "Lightning Arrester (LA)",  vol: `${arresterCount}`,   sat: "SET" });
+  if (totalGardu > 0)      rows.push({ simbol: "🏗",  uraian: "Gardu Distribusi",         vol: `${totalGardu}`,      sat: "SET" });
 
   const tableTop = y;
   const ROW_H = 5.8;
 
   rows.forEach((row, i) => {
     const ry = y + i * ROW_H;
-    if (ry + ROW_H > PH - 1) return; // don't overflow page
+    if (ry + ROW_H > PH - 1) return;
     pdf.setFillColor(i % 2 === 0 ? 248 : 255, 250, 255);
     pdf.rect(rx, ry, RP, ROW_H, "F");
     pdf.setDrawColor(215, 225, 245);
@@ -373,8 +386,8 @@ export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
     pdf.setFont("helvetica", row.bold ? "bold" : "normal");
     pdf.setFontSize(5.2);
     pdf.setTextColor(40, 50, 90);
-    pdf.text(row.simbol, C_SIMBOL + C_SIMBOL_W / 2, ry + 4, { align: "center" });
-    pdf.text(pdf.splitTextToSize(row.uraian, C_URAIAN_W - 1)[0], C_URAIAN, ry + 4);
+    pdf.text(row.simbol, C_SIM + C_SIM_W / 2, ry + 4, { align: "center" });
+    pdf.text(pdf.splitTextToSize(row.uraian, C_UAI_W - 1)[0], C_UAI, ry + 4);
     pdf.setFont("helvetica", "bold");
     pdf.setTextColor(row.bold ? 20 : 40, 50, 100);
     pdf.text(row.vol, C_VOL + C_VOL_W, ry + 4, { align: "right" });
@@ -383,17 +396,21 @@ export async function exportToPdf(opts: ExportPdfOptions): Promise<void> {
     pdf.text(row.sat, C_SAT + 2.5, ry + 4, { align: "center" });
   });
 
+  // Column dividers
   const tableBottom = Math.min(y + rows.length * ROW_H, PH - 1);
-  drawColDividers(tableTop - 7, tableBottom);
+  pdf.setDrawColor(180, 200, 230);
+  pdf.setLineWidth(0.2);
+  pdf.line(C_UAI - 1, tableTop - 7, C_UAI - 1, tableBottom);
+  pdf.line(C_VOL - 1, tableTop - 7, C_VOL - 1, tableBottom);
+  pdf.line(C_SAT - 1, tableTop - 7, C_SAT - 1, tableBottom);
 
-  // ── Outer borders ──────────────────────────────────────────────────────
+  // Outer borders
   pdf.setDrawColor(0, 20, 80);
   pdf.setLineWidth(0.5);
   pdf.rect(rx, 0, RP, PH);
   pdf.setLineWidth(0.8);
-  pdf.rect(0, 0, PW, PH); // page border
+  pdf.rect(0, 0, PW, PH);
 
-  // ── Save ──────────────────────────────────────────────────────────────
   const filename = `SPARK_${projectTitle.replace(/[^a-zA-Z0-9\s]/g, "").trim().replace(/\s+/g, "_")}.pdf`;
   pdf.save(filename);
 }

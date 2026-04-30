@@ -1849,8 +1849,18 @@ export default function SparkMap() {
                 const projectTitle = savedLayers.length > 0
                   ? savedLayers.map(l => l.label).join(" + ")
                   : `${statusJaringan} ${jenisJaringan}`;
+                const map = mapRef.current!;
+                const allPoles: [number, number][] = [
+                  ...poles,
+                  ...savedLayers.flatMap(l => l.poles),
+                ];
                 await exportToPdf({
                   mapEl, projectTitle,
+                  latLngToPoint: (latlng) => {
+                    const pt = map.latLngToContainerPoint(L.latLng(latlng[0], latlng[1]));
+                    return { x: pt.x, y: pt.y };
+                  },
+                  allPoles,
                   poles, poleData, effectiveSchoors, gardus,
                   jenisJaringan, statusJaringan, totalLengthM,
                   tinggiTiang, materialTiang, jarakGawang, kondukturUkuran,
