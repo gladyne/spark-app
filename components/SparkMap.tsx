@@ -512,7 +512,7 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
   }, [selectedGarduIdx, gardus]);
 
   useEffect(() => {
-    if (selectedSchoorIdx !== null) setTempSchoor(schoors[selectedSchoorIdx] || { jenis: "Treck" });
+    if (selectedSchoorIdx !== null) setTempSchoor(schoors[selectedSchoorIdx] || effectiveSchoors[selectedSchoorIdx] || { jenis: "Treck" });
   }, [selectedSchoorIdx, schoors]);
 
   useEffect(() => {
@@ -1744,7 +1744,7 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
                         if (gardus[idx]) setSelectedGarduIdx(idx);
                         else { commitHistory(`Pasang gardu ${paletteGarduJenis}`); setGardus(prev => ({ ...prev, [idx]: { jenis: paletteGarduJenis, orientasi: paletteGarduOrientasi, trafo: paletteGarduTrafo } })); }
                       } else if (editMode === "schoor") {
-                        if (schoors[idx]) setSelectedSchoorIdx(idx);
+                        if (schoors[idx] || effectiveSchoors[idx]) setSelectedSchoorIdx(idx);
                         else { commitHistory(`Pasang schoor ${paletteSchoorJenis}`); setSchoors(prev => ({ ...prev, [idx]: { jenis: paletteSchoorJenis, rotation: bisectorOutwardAngle } })); }
                       } else if (editMode === "konstruksi") {
                         setSelectedKonstruksiIdx(idx);
