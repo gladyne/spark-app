@@ -78,6 +78,9 @@ export interface ExportPdfOptions {
 }
 
 // ── Schematic drawing ──────────────────────────────────────────────────────
+// All coordinates are in mm (1 logical unit = 1 mm on the printed A4 page).
+
+const POLE_R = 1.4; // mm radius of pole circle
 
 function drawSchematic(
   canvas: HTMLCanvasElement,
@@ -85,10 +88,10 @@ function drawSchematic(
   SCALE: number,
 ): void {
   const ctx = canvas.getContext("2d")!;
-  const CW = canvas.width  / SCALE;
-  const CH = canvas.height / SCALE;
+  const CW = canvas.width  / SCALE; // logical mm width
+  const CH = canvas.height / SCALE; // logical mm height
 
-  // ── Coordinate projection — use poles only as source of truth ──────────
+  // ── Coordinate projection ────────────────────────────────────────────────
   const allCoords: [number, number][] = layers.flatMap(l => l.poles);
   if (allCoords.length === 0) return;
 
@@ -96,35 +99,30 @@ function drawSchematic(
   const lngs = allCoords.map(c => c[1]);
   const minLat = Math.min(...lats), maxLat = Math.max(...lats);
   const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
-  const midLat = (minLat + maxLat) / 2;
-  const cos = Math.cos((midLat * Math.PI) / 180); // lng correction
+  const midLat  = (minLat + maxLat) / 2;
+  const cos = Math.cos((midLat * Math.PI) / 180);
 
-  // Project to a flat cartesian plane (correct aspect ratio for small areas)
   const toFlat = (lat: number, lng: number) => ({
-    x: (lng - minLng) * cos,
-    y: -(lat - minLat),           // flip so north = up
+    x:  (lng - minLng) * cos,
+    y: -(lat - minLat),      // flip so north = up
   });
 
   const flatAll = allCoords.map(([la, ln]) => toFlat(la, ln));
-  const fxArr  = flatAll.map(f => f.x);
-  const fyArr  = flatAll.map(f => f.y);
-  const minFX  = Math.min(...fxArr), maxFX = Math.max(...fxArr);
-  const minFY  = Math.min(...fyArr), maxFY = Math.max(...fyArr);
+  const fxArr   = flatAll.map(f => f.x);
+  const fyArr   = flatAll.map(f => f.y);
+  const minFX   = Math.min(...fxArr), maxFX = Math.max(...fxArr);
+  const minFY   = Math.min(...fyArr), maxFY = Math.max(...fyArr);
   const dFX = (maxFX - minFX) || 0.0001;
   const dFY = (maxFY - minFY) || 0.0001;
 
-  const PAD  = 0.14; // 14% padding each side
+  // 13% margin each side so labels never clip
+  const PAD  = 0.13;
   const useW = CW * (1 - 2 * PAD);
   const useH = CH * (1 - 2 * PAD);
 
-  // Uniform scale: fit the larger dimension
-  const s = Math.min(useW / dFX, useH / dFY);
-
-  // Centre the drawing
-  const drawW  = dFX * s;
-  const drawH  = dFY * s;
-  const baseX  = (CW - drawW) / 2 - minFX * s;
-  const baseY  = (CH - drawH) / 2 - minFY * s;
+  const s    = Math.min(useW / dFX, useH / dFY);
+  const baseX = (CW - dFX * s) / 2 - minFX * s;
+  const baseY = (CH - dFY * s) / 2 - minFY * s;
 
   const project = (lat: number, lng: number): [number, number] => {
     const f = toFlat(lat, lng);
@@ -135,142 +133,143 @@ function drawSchematic(
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, CW, CH);
 
-  // Subtle dot grid
-  ctx.fillStyle = "#e2e8f0";
-  for (let gx = 20; gx < CW; gx += 24) {
-    for (let gy = 20; gy < CH; gy += 24) {
+  // Subtle dot grid (dots every 20 mm)
+  ctx.fillStyle = "#dde4ef";
+  for (let gx = 15; gx < CW; gx += 20) {
+    for (let gy = 15; gy < CH; gy += 20) {
       ctx.beginPath();
-      ctx.arc(gx, gy, 0.7, 0, Math.PI * 2);
+      ctx.arc(gx, gy, 0.35, 0, Math.PI * 2);
       ctx.fill();
     }
   }
 
-  // ── Draw layers — everything derived from poles only ─────────────────────
-  // Pass 1: network lines + distance labels (drawn under poles)
+  // ── Pass 1: network lines + distance labels ──────────────────────────────
   layers.forEach(layer => {
     if (layer.poles.length < 2) return;
     const isExisting = layer.statusJaringan === "Existing";
-    const lineColor  = isExisting ? "#374151" : "#2563eb";
+    const lineColor  = isExisting ? "#374151" : "#1d4ed8";
 
     const pts = layer.poles.map(([la, ln]) => project(la, ln));
-
-    // Road glow (soft halo under network line for road feel)
-    ctx.beginPath();
-    pts.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
-    ctx.strokeStyle = isExisting ? "#9ca3af" : "#93c5fd";
-    ctx.lineWidth   = 12;
-    ctx.lineCap     = "round";
-    ctx.lineJoin    = "round";
-    ctx.globalAlpha = 0.22;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
 
     // Network line
     ctx.beginPath();
     pts.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
     ctx.strokeStyle = lineColor;
-    ctx.lineWidth   = 2.5;
+    ctx.lineWidth   = 0.45;
     ctx.lineCap     = "round";
     ctx.lineJoin    = "round";
-    ctx.setLineDash(isExisting ? [] : [10, 5]);
+    ctx.setLineDash(isExisting ? [] : [3.5, 2]);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Distance labels (perpendicular offset from segment midpoint)
-    ctx.font = "bold 7.5px Arial, sans-serif";
-    ctx.textAlign = "center";
+    // Distance labels — rotated along the segment for a clean engineering look
+    ctx.font         = "bold 2px Arial, sans-serif";
+    ctx.textBaseline = "middle";
     for (let i = 0; i < pts.length - 1; i++) {
       const [x1, y1] = pts[i];
       const [x2, y2] = pts[i + 1];
-      const mx = (x1 + x2) / 2;
-      const my = (y1 + y2) / 2;
-      const dist  = haversineMeters(layer.poles[i][0], layer.poles[i][1], layer.poles[i+1][0], layer.poles[i+1][1]);
+      const mx   = (x1 + x2) / 2;
+      const my   = (y1 + y2) / 2;
+      const dist = haversineMeters(
+        layer.poles[i][0], layer.poles[i][1],
+        layer.poles[i+1][0], layer.poles[i+1][1],
+      );
       const label = `${Math.round(dist)} m`;
-
-      // Place label perpendicular-offset above the segment
       const angle = Math.atan2(y2 - y1, x2 - x1);
-      const ox = -Math.sin(angle) * 12;
-      const oy =  Math.cos(angle) * 12;
-      const lx = mx + ox;
-      const ly = my + oy;
+      // Keep text always readable (never upside-down)
+      const flip  = Math.abs(angle) > Math.PI / 2;
+
+      ctx.save();
+      ctx.translate(mx, my);
+      ctx.rotate(flip ? angle + Math.PI : angle);
 
       const tw = ctx.measureText(label).width;
-      ctx.fillStyle = "rgba(255,255,255,0.90)";
-      ctx.fillRect(lx - tw / 2 - 2, ly - 7.5, tw + 4, 11);
+      // White backing pill slightly above the line
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      ctx.fillRect(-tw / 2 - 0.6, -3.4, tw + 1.2, 2.5);
       ctx.fillStyle = lineColor;
-      ctx.fillText(label, lx, ly + 1.5);
+      ctx.fillText(label, 0, -2.2);
+      ctx.restore();
     }
   });
 
-  // Pass 2: pole circles + construction labels (on top of lines)
+  // ── Pass 2: pole circles + labels ───────────────────────────────────────
   layers.forEach(layer => {
-    const isExisting = layer.statusJaringan === "Existing";
-    const poleStroke = isExisting ? "#374151" : "#1e40af";
+    const isExisting  = layer.statusJaringan === "Existing";
+    const poleStroke  = isExisting ? "#475569" : "#1e3a8a";
+    const lastIdx     = layer.poles.length - 1;
 
     layer.poles.forEach(([la, ln], idx) => {
       const [px, py] = project(la, ln);
-      const pt    = layer.poleTypes[idx];
-      const type  = pt?.short || "A1";
-      const color = TYPE_COLOR[type] ?? "#374151";
+      const pt       = layer.poleTypes[idx];
+      const type     = pt?.short || "A1";
+      const color    = TYPE_COLOR[type] ?? "#374151";
+      const isA1     = type === "A1";
+      const isEnd    = idx === 0 || idx === lastIdx;
 
-      // Drop shadow
+      // ── Circle ──────────────────────────────────────────────────────────
       ctx.beginPath();
-      ctx.arc(px + 0.5, py + 0.8, 6.5, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(0,0,0,0.12)";
-      ctx.fill();
-
-      // Circle
-      ctx.beginPath();
-      ctx.arc(px, py, 6.5, 0, Math.PI * 2);
-      ctx.fillStyle   = "#ffffff";
-      ctx.fill();
-      ctx.strokeStyle = poleStroke;
-      ctx.lineWidth   = 2;
-      ctx.stroke();
-
-      // Inner dot for A3-type poles
-      if (type.startsWith("A3") || type === "2xA3") {
-        ctx.beginPath();
-        ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+      ctx.arc(px, py, POLE_R, 0, Math.PI * 2);
+      if (isA1) {
+        // A1: white fill, dark ring
+        ctx.fillStyle   = "#ffffff";
+        ctx.fill();
+        ctx.strokeStyle = poleStroke;
+        ctx.lineWidth   = 0.35;
+        ctx.stroke();
+      } else {
+        // Special types: solid filled with type colour
         ctx.fillStyle = color;
         ctx.fill();
       }
 
-      // Construction label
-      ctx.font      = "bold 7px Arial, sans-serif";
-      ctx.fillStyle = color;
-      ctx.textAlign = "center";
-      ctx.fillText(type, px, py + 17);
+      // ── Pole index (tiny, above circle) ─────────────────────────────────
+      ctx.font         = "1.5px Arial, sans-serif";
+      ctx.fillStyle    = "#94a3b8";
+      ctx.textAlign    = "center";
+      ctx.textBaseline = "bottom";
+      ctx.fillText(`${idx + 1}`, px, py - POLE_R - 0.4);
+
+      // ── Construction label (below circle) ───────────────────────────────
+      // Show for all endpoints and for any non-A1 pole
+      if (isEnd || !isA1) {
+        ctx.font         = `bold 1.9px Arial, sans-serif`;
+        ctx.fillStyle    = isA1 ? "#374151" : color;
+        ctx.textAlign    = "center";
+        ctx.textBaseline = "top";
+        ctx.fillText(type, px, py + POLE_R + 0.5);
+      }
     });
   });
 
   // ── Legend (bottom-left) ─────────────────────────────────────────────────
-  const lx = 10, ly = CH - 38;
-  ctx.fillStyle = "rgba(255,255,255,0.90)";
+  const lx = 8, ly = CH - 15;
+  ctx.fillStyle = "rgba(255,255,255,0.93)";
   ctx.beginPath();
-  ctx.roundRect(lx, ly, 130, 32, 4);
+  ctx.roundRect(lx, ly, 52, 13, 1.5);
   ctx.fill();
   ctx.strokeStyle = "#cbd5e1";
-  ctx.lineWidth = 0.5;
+  ctx.lineWidth   = 0.25;
   ctx.stroke();
 
   const legendItems = [
     { dash: false, color: "#374151", label: "Jaringan Existing" },
-    { dash: true,  color: "#2563eb", label: "Jaringan Perluasan" },
+    { dash: true,  color: "#1d4ed8", label: "Jaringan Perluasan" },
   ];
-  ctx.font = "10px Arial, sans-serif";
+  ctx.font         = "2px Arial, sans-serif";
+  ctx.textBaseline = "middle";
   legendItems.forEach(({ dash, color, label }, i) => {
-    const iy = ly + 11 + i * 14;
+    const iy = ly + 4 + i * 5;
     ctx.beginPath();
-    ctx.setLineDash(dash ? [5, 3] : []);
+    ctx.setLineDash(dash ? [3, 2] : []);
     ctx.strokeStyle = color;
-    ctx.lineWidth   = 2;
-    ctx.moveTo(lx + 6,  iy);
-    ctx.lineTo(lx + 24, iy);
+    ctx.lineWidth   = 0.45;
+    ctx.moveTo(lx + 3,  iy);
+    ctx.lineTo(lx + 13, iy);
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = "#374151";
-    ctx.fillText(label, lx + 28, iy + 3.5);
+    ctx.fillText(label, lx + 15, iy);
   });
 }
 

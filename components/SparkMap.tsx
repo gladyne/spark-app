@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, Fragment, useEffect, useCallback } from "react";
+import { useSession } from "next-auth/react";
 import { MapContainer, TileLayer, Marker, Popup, Polyline, LayersControl } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
@@ -105,10 +106,95 @@ type HistorySnapshot = {
   savedLayers: NetworkLayer[]; junctions: JunctionInfo[];
 };
 
-export default function SparkMap() {
+interface SparkMapProps {
+  projectId?: string;
+}
+
+export default function SparkMap({ projectId }: SparkMapProps = {}) {
   // ─── Core state ───────────────────────────────────────────────────────────
   const mapRef = useRef<L.Map | null>(null);
   const [startPos, setStartPos] = useState<[number, number] | null>(null);
+
+  // ─── Database & Auth Integration States ──────────────────────────────────
+  const { data: session } = useSession();
+  const [projectName, setProjectName] = useState("Memuat Project...");
+  const [projectDesc, setProjectDesc] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Load project
+  useEffect(() => {
+    if (!projectId) {
+      setProjectName("Draft Baru");
+      return;
+    }
+    const loadProject = async () => {
+      try {
+        setIsLoading(true);
+        const res = await fetch(`/api/projects/${projectId}`);
+        if (!res.ok) {
+          alert("Gagal memuat project.");
+          return;
+        }
+        const proj = await res.json();
+        setProjectName(proj.name);
+        setProjectDesc(proj.description);
+        
+        const data = proj.data;
+        if (data.savedLayers) setSavedLayers(data.savedLayers);
+        if (data.junctions) setJunctions(data.junctions);
+        if (data.connections) setConnections(data.connections);
+        if (data.groupNames) setGroupNames(data.groupNames);
+        
+        if (proj.mapCenter) {
+          setFlyTarget(proj.mapCenter);
+        }
+      } catch (e) {
+        console.error(e);
+        alert("Gagal memuat project.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadProject();
+  }, [projectId]);
+
+  // Save project function
+  const handleSaveProject = async () => {
+    if (!projectId) return;
+    setIsSaving(true);
+    try {
+      const center = mapRef.current ? [mapRef.current.getCenter().lat, mapRef.current.getCenter().lng] : [-0.7893, 113.9213];
+      const zoom = mapRef.current ? mapRef.current.getZoom() : 13;
+      
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: projectName,
+          description: projectDesc,
+          data: {
+            savedLayers,
+            junctions,
+            connections,
+            groupNames
+          },
+          mapCenter: center,
+          mapZoom: zoom
+        })
+      });
+      if (res.ok) {
+        setConnectNotif("💾 Project Berhasil Disimpan!");
+        setTimeout(() => setConnectNotif(null), 2500);
+      } else {
+        alert("Gagal menyimpan project.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Gagal menyimpan project.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
   const [endPos, setEndPos] = useState<[number, number] | null>(null);
   const [mode, setMode] = useState<"start" | "end" | null>(null);
   const [poles, setPoles] = useState<[number, number][]>([]);
@@ -1204,7 +1290,7 @@ export default function SparkMap() {
     poleData.forEach((pd, idx) => {
       const isEndpoint = idx === 0 || idx === poles.length - 1;
       if (!isEndpoint && pd.angle >= autoSchoorThreshold && !schoors[idx]) {
-        const autoJenis: SchoorConfig["jenis"] = pd.turnSign > 0 ? "Treck" : "Druck";
+        const autoJenis: SchoorConfig["jenis"] = pd.turnSign > 0 ? "Druck" : "Treck";
         effectiveSchoors[idx] = { jenis: autoJenis };
       }
     });
@@ -1552,7 +1638,6 @@ export default function SparkMap() {
             else if (pData.jtmTypeShort && pData.jtrTypeShort) mapLabelHtml = `${pData.jtmTypeShort}<br/>${pData.jtrTypeShort}`;
             else mapLabelHtml = `${pData.jtmTypeShort || pData.jtrTypeShort}`;
             if (gardu) mapLabelHtml += `<br/><span style="color:#7e22ce; font-size:10px;">Gardu ${gardu.jenis}<br/>${gardu.trafo}</span>`;
-            if (schoor && isAutoSchoor) mapLabelHtml += `<br/><div style="color:#059669; background:#ecfdf5; padding:1px 4px; border-radius:4px; border:1px solid #6ee7b7; display:inline-block; margin-top:2px; font-size:9px;">⚡ AUTO</div>`;
 
             // Gardu SVG
             let visualGarduHtml = "";
@@ -1764,22 +1849,66 @@ export default function SparkMap() {
           <div className="absolute inset-0 opacity-[0.07]" style={{backgroundImage:"radial-gradient(circle, white 1px, transparent 1px)", backgroundSize:"20px 20px"}} />
           {/* Glow */}
           <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-blue-500/20 blur-2xl" />
-          <div className="relative flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/30">
-              <svg viewBox="0 0 32 32" className="w-6 h-6" fill="none">
-                <defs>
-                  <linearGradient id="sb-bolt" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stopColor="#FDE68A"/>
-                    <stop offset="100%" stopColor="#F59E0B"/>
-                  </linearGradient>
-                </defs>
-                <path d="M18.5 4L10 17.5H16L13.5 28L23 14.5H17L18.5 4Z" fill="url(#sb-bolt)"/>
-              </svg>
+          
+          <div className="relative flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/30">
+                <svg viewBox="0 0 32 32" className="w-6 h-6" fill="none">
+                  <defs>
+                    <linearGradient id="sb-bolt" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stopColor="#FDE68A"/>
+                      <stop offset="100%" stopColor="#F59E0B"/>
+                    </linearGradient>
+                  </defs>
+                  <path d="M18.5 4L10 17.5H16L13.5 28L23 14.5H17L18.5 4Z" fill="url(#sb-bolt)"/>
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-2xl font-black text-white tracking-tight leading-none">SPARK</h1>
+                <p className="text-blue-300 text-[10px] font-medium mt-0.5 tracking-wide">Sistem Pemetaan Pintar Rencana Kelistrikan</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl font-black text-white tracking-tight leading-none">SPARK</h1>
-              <p className="text-blue-300 text-[10px] font-medium mt-0.5 tracking-wide">Sistem Pemetaan Pintar Rencana Kelistrikan</p>
+            
+            {/* Dashboard Link */}
+            <button 
+              onClick={() => window.location.href = "/dashboard"}
+              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+            >
+              📁 Dashboard
+            </button>
+          </div>
+
+          {/* Project Title / Save Section */}
+          <div className="relative mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
+            <div className="flex-1 min-w-0 pr-2">
+              {projectId ? (
+                <>
+                  <input
+                    type="text"
+                    value={projectName}
+                    onChange={(e) => setProjectName(e.target.value)}
+                    className="w-full bg-transparent text-white font-bold text-sm outline-none border-b border-transparent focus:border-blue-400 pb-0.5"
+                    placeholder="Nama Project"
+                    title="Edit Nama Project (klik untuk edit)"
+                  />
+                  <p className="text-[10px] text-slate-400 truncate mt-0.5">Project ID: {projectId}</p>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-white font-bold text-sm truncate">Draft Project</h2>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Belum disimpan ke database</p>
+                </>
+              )}
             </div>
+            {projectId && (
+              <button
+                onClick={handleSaveProject}
+                disabled={isSaving}
+                className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-400 hover:to-indigo-500 text-white rounded-lg text-xs font-bold shadow transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+              >
+                {isSaving ? "Menyimpan..." : "💾 Simpan"}
+              </button>
+            )}
           </div>
         </div>
 
