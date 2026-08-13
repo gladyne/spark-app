@@ -1769,9 +1769,14 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
                           </div>
                         )}
                         {schoor && (
-                          <div className={`p-2 mt-2 border rounded font-bold text-xs shadow-sm ${isAutoSchoor ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-emerald-100 border-emerald-300 text-emerald-900"}`}>
-                            ⚓ PENOPANG: {schoor.jenis.toUpperCase()}
-                            {isAutoSchoor && <span className="ml-1 bg-emerald-200 text-emerald-700 px-1 rounded text-[10px]">AUTO ⚡</span>}
+                          <div
+                            onClick={() => setSelectedSchoorIdx(idx)}
+                            className={`p-2 mt-2 border rounded font-bold text-xs shadow-sm cursor-pointer flex items-center justify-between group transition-all ${isAutoSchoor ? "bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100" : "bg-emerald-100 border-emerald-300 text-emerald-900 hover:bg-emerald-200"}`}>
+                            <span>
+                              ⚓ PENOPANG: {schoor.jenis.toUpperCase()}
+                              {isAutoSchoor && <span className="ml-1 bg-emerald-200 text-emerald-700 px-1 rounded text-[10px]">AUTO ⚡</span>}
+                            </span>
+                            <span className="text-[10px] text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity font-semibold">✏️ Edit</span>
                           </div>
                         )}
                         <div className="bg-gray-50 p-2.5 rounded-md mt-2 text-left text-xs border border-gray-200 flex flex-col gap-1 shadow-sm">
