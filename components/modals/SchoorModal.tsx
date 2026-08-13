@@ -29,7 +29,7 @@ export default function SchoorModal({
         </div>
       )}
 
-      <div className="mb-3">
+      <div className="mb-4">
         <label className="text-xs text-gray-600 font-bold mb-1 block">Jenis Penopang Mekanis:</label>
         <select className="w-full p-2 border border-gray-300 rounded-lg bg-gray-50 text-sm focus:ring-2 focus:ring-emerald-400 outline-none"
           value={tempSchoor.jenis} onChange={e => setTempSchoor({ ...tempSchoor, jenis: e.target.value as SchoorConfig["jenis"] })}>
@@ -37,28 +37,12 @@ export default function SchoorModal({
           <option value="Druck">Druck Schoor (Tiang Dorong ke Dalam)</option>
           <option value="Kontramast">Kontramast (Tiang Jangkar Seberang)</option>
         </select>
-      </div>
-
-      <div className="mb-4">
-        <label className="text-xs text-gray-600 font-bold mb-1 block">
-          Arah Manual: <span className="text-emerald-700">{tempSchoor.rotation !== undefined ? `${tempSchoor.rotation}°` : "Otomatis"}</span>
-        </label>
-        <div className="flex items-center gap-2">
-          <input type="range" min={0} max={359} step={5}
-            value={tempSchoor.rotation ?? 0}
-            onChange={e => setTempSchoor({ ...tempSchoor, rotation: Number(e.target.value) })}
-            className="flex-1 accent-emerald-500"
-          />
-          <button onClick={() => setTempSchoor({ ...tempSchoor, rotation: undefined })}
-            className="text-[10px] text-gray-400 hover:text-red-500 px-1.5 py-0.5 border border-gray-200 rounded font-bold">
-            ↺ Auto
-          </button>
-        </div>
+        <p className="text-[10px] text-slate-400 mt-1.5">Putar arah langsung di peta dengan drag ujung penopang.</p>
       </div>
 
       <div className="flex gap-2">
-        <button onClick={onSave} className="flex-1 bg-emerald-600 text-white font-bold py-2 rounded-lg text-sm shadow-sm hover:bg-emerald-700">Simpan Manual</button>
-        {schoors[selectedSchoorIdx] && <button onClick={onRemove} className="flex-1 bg-red-100 text-red-600 font-bold py-2 rounded-lg text-sm shadow-sm hover:bg-red-200">Hapus</button>}
+        <button onClick={onSave} className="flex-1 bg-emerald-600 text-white font-bold py-2 rounded-lg text-sm shadow-sm hover:bg-emerald-700">Simpan</button>
+        <button onClick={onRemove} className="flex-1 bg-red-100 text-red-600 font-bold py-2 rounded-lg text-sm shadow-sm hover:bg-red-200">🗑️ Hapus</button>
         <button onClick={onClose} className="flex-1 bg-gray-200 text-gray-700 font-bold py-2 rounded-lg text-sm shadow-sm hover:bg-gray-300">Batal</button>
       </div>
     </div>

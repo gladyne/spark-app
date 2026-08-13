@@ -213,6 +213,7 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
 
   // ─── Schoor state ─────────────────────────────────────────────────────────
   const [schoors, setSchoors] = useState<Record<number, SchoorConfig>>({});
+  const [schoorDisabled, setSchoorDisabled] = useState<Set<number>>(new Set());
   const [selectedSchoorIdx, setSelectedSchoorIdx] = useState<number | null>(null);
   const [tempSchoor, setTempSchoor] = useState<SchoorConfig>({ jenis: "Treck" });
 
@@ -1179,10 +1180,20 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
     if (selectedGarduIdx !== null) { commitHistory("Hapus gardu"); const ng = { ...gardus }; delete ng[selectedGarduIdx]; setGardus(ng); setSelectedGarduIdx(null); }
   };
   const saveSchoor = () => {
-    if (selectedSchoorIdx !== null) { commitHistory(`Pasang schoor ${tempSchoor.jenis}`); setSchoors(prev => ({ ...prev, [selectedSchoorIdx]: tempSchoor })); setSelectedSchoorIdx(null); }
+    if (selectedSchoorIdx !== null) {
+      commitHistory(`Pasang schoor ${tempSchoor.jenis}`);
+      setSchoors(prev => ({ ...prev, [selectedSchoorIdx]: tempSchoor }));
+      setSchoorDisabled(prev => { const s = new Set(prev); s.delete(selectedSchoorIdx); return s; });
+      setSelectedSchoorIdx(null);
+    }
   };
   const removeSchoor = () => {
-    if (selectedSchoorIdx !== null) { commitHistory("Hapus schoor"); const ns = { ...schoors }; delete ns[selectedSchoorIdx]; setSchoors(ns); setSelectedSchoorIdx(null); }
+    if (selectedSchoorIdx !== null) {
+      commitHistory("Hapus penopang");
+      const ns = { ...schoors }; delete ns[selectedSchoorIdx]; setSchoors(ns);
+      setSchoorDisabled(prev => new Set(prev).add(selectedSchoorIdx));
+      setSelectedSchoorIdx(null);
+    }
   };
 
   // ─── Computed pole data ───────────────────────────────────────────────────
@@ -1289,7 +1300,7 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
   if (autoSchoor && poles.length > 2) {
     poleData.forEach((pd, idx) => {
       const isEndpoint = idx === 0 || idx === poles.length - 1;
-      if (!isEndpoint && pd.angle >= autoSchoorThreshold && !schoors[idx]) {
+      if (!isEndpoint && pd.angle >= autoSchoorThreshold && !schoors[idx] && !schoorDisabled.has(idx)) {
         // offsetSide >= 0 → tiang di kanan jalan; < 0 → kiri jalan
         // Treck jika bisector menjauhi jalan, Druck jika ke arah jalan
         const autoJenis: SchoorConfig["jenis"] =
