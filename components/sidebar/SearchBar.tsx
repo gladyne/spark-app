@@ -25,7 +25,7 @@ export default function SearchBar({
   canUndo, canRedo, onUndo, onRedo,
 }: Props) {
   return (
-    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-xl px-3">
+    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] w-full max-w-xl px-3">
       <div className="flex items-center gap-2">
 
         {/* Tombol Undo / Redo */}
