@@ -225,7 +225,6 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
   const [autoSchoor, setAutoSchoor] = useState(false);
   const [routingMode, setRoutingMode] = useState<"jalan" | "lurus">("jalan");
   const [autoSchoorThreshold, setAutoSchoorThreshold] = useState(15);
-  const [roadSide, setRoadSide] = useState<"kiri" | "kanan">("kiri");
   const [rekapOpen, setRekapOpen] = useState(false);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
 
@@ -1291,10 +1290,10 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
     poleData.forEach((pd, idx) => {
       const isEndpoint = idx === 0 || idx === poles.length - 1;
       if (!isEndpoint && pd.angle >= autoSchoorThreshold && !schoors[idx]) {
-        // Tiang kiri jalan: belok kanan → bisector menjauhi jalan → Treck; belok kiri → ke arah jalan → Druck
-        // Tiang kanan jalan: kebalikannya
+        // offsetSide >= 0 → tiang di kanan jalan; < 0 → kiri jalan
+        // Treck jika bisector menjauhi jalan, Druck jika ke arah jalan
         const autoJenis: SchoorConfig["jenis"] =
-          (pd.turnSign > 0) === (roadSide === "kiri") ? "Treck" : "Druck";
+          (pd.turnSign > 0) === (offsetSide >= 0) ? "Druck" : "Treck";
         effectiveSchoors[idx] = { jenis: autoJenis };
       }
     });
@@ -1959,7 +1958,6 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
             autoSchoor={autoSchoor} setAutoSchoor={setAutoSchoor}
             autoSchoorThreshold={autoSchoorThreshold} setAutoSchoorThreshold={setAutoSchoorThreshold}
             autoSchoorCount={autoSchoorCount} polesLength={poles.length}
-            roadSide={roadSide} setRoadSide={setRoadSide}
           />
         )}
 

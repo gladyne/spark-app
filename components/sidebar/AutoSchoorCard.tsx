@@ -7,13 +7,11 @@ interface Props {
   setAutoSchoorThreshold: (v: number) => void;
   autoSchoorCount: number;
   polesLength: number;
-  roadSide: "kiri" | "kanan";
-  setRoadSide: (v: "kiri" | "kanan") => void;
 }
 
 export default function AutoSchoorCard({
   autoSchoor, setAutoSchoor, autoSchoorThreshold, setAutoSchoorThreshold,
-  autoSchoorCount, polesLength, roadSide, setRoadSide,
+  autoSchoorCount, polesLength,
 }: Props) {
   return (
     <div className={`rounded-2xl overflow-hidden shadow-sm border transition-all duration-300 ${autoSchoor ? "border-emerald-200 shadow-emerald-100" : "border-slate-200"}`}>
@@ -65,41 +63,17 @@ export default function AutoSchoorCard({
               </div>
             </div>
 
-            {/* Sisi Tiang */}
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Posisi Tiang</p>
-              <div className="flex gap-2">
-                {(["kiri", "kanan"] as const).map(side => (
-                  <button key={side} onClick={() => setRoadSide(side)}
-                    className={`flex-1 py-2 text-xs rounded-xl font-bold border transition-all ${
-                      roadSide === side
-                        ? "bg-emerald-500 text-white border-transparent shadow-sm"
-                        : "bg-slate-50 border-slate-200 text-slate-600 hover:border-emerald-300 hover:bg-emerald-50"
-                    }`}>
-                    {side === "kiri" ? "🛣️ Kiri Jalan" : "🛣️ Kanan Jalan"}
-                  </button>
-                ))}
-              </div>
-              <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
-                Schoor selalu mengarah <strong>menjauhi jalan</strong> — jika resultan menuju jalan, otomatis pakai Druck.
-              </p>
-            </div>
-
             {/* Legend */}
             <div className="rounded-xl bg-slate-50 border border-slate-100 p-3 flex flex-col gap-1.5">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-red-400 flex-shrink-0" />
-                <span className="text-[11px] text-slate-600">
-                  <strong>Menjauhi jalan</strong> → <span className="text-red-600 font-bold">Treck</span>
-                </span>
+                <span className="text-[11px] text-slate-600">Resultan <strong>menjauhi jalan</strong> → <span className="text-red-600 font-bold">Treck</span></span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0" />
-                <span className="text-[11px] text-slate-600">
-                  <strong>Ke arah jalan</strong> → <span className="text-blue-600 font-bold">Druck</span>
-                </span>
+                <span className="text-[11px] text-slate-600">Resultan <strong>ke arah jalan</strong> → <span className="text-blue-600 font-bold">Druck</span></span>
               </div>
-              <p className="text-[10px] text-slate-400 mt-0.5">Set manual tetap override auto schoor.</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">Sisi jalan terdeteksi otomatis dari offset tiang. Set manual tetap override.</p>
             </div>
           </div>
         ) : (
