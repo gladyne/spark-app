@@ -1652,7 +1652,11 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
             // Schoor SVG
             let visualSchoorHtml = "";
             if (schoor) {
-              const rot = schoor.rotation !== undefined ? schoor.rotation : bisectorOutwardAngle;
+              // Auto Druck: bisectorOutwardAngle mengarah ke jalan → flip 180° agar pantat juga menjauhi jalan
+              const baseRot = schoor.rotation !== undefined ? schoor.rotation : bisectorOutwardAngle;
+              const rot = (isAutoSchoor && schoor.jenis === "Druck" && schoor.rotation === undefined)
+                ? baseRot + 180
+                : baseRot;
               visualSchoorHtml = buildSchoorSvg(schoor, poleSize, rot, isAutoSchoor);
             }
 
