@@ -32,9 +32,15 @@ export async function exportRabToExcel(
   }
 
   if (!worksheet) {
-    const existingList = sheetNames.map(s => `"${s}"`).join(", ");
+    const isSingleExported = sheetNames.length === 1 && (sheetNames[0].toLowerCase().includes("rab") || sheetNames[0].toLowerCase().includes("khs"));
+    if (isSingleExported) {
+      throw new Error(
+        `File yang Anda upload ("${sheetNames[0]}") adalah file hasil ekspor sebelumnya (hanya 1 sheet). Harap upload file MASTER template asli: "Template_RAB_KHS_2026_UP3_Kupang.xlsx" (yang memiliki 15 sheet lengkap, termasuk sheet "RAB Pasang").`
+      );
+    }
+    const existingList = sheetNames.slice(0, 5).map(s => `"${s}"`).join(", ");
     throw new Error(
-      `Sheet "RAB Pasang" tidak ditemukan di dalam template. Sheet yang ditemukan: ${existingList}. Pastikan menggunakan file Template_RAB_KHS_2026_UP3_Kupang.xlsx yang benar.`
+      `Sheet "RAB Pasang" tidak ditemukan di dalam template (${workbook.worksheets.length} sheet terbaca: ${existingList}...). Pastikan mengunggah file template asli Template_RAB_KHS_2026_UP3_Kupang.xlsx.`
     );
   }
 

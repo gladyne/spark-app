@@ -1485,98 +1485,6 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
       {/* MAP AREA */}
       <div className={`flex-1 relative z-0 ${editMode === "insert" ? "cursor-crosshair" : ""}`}>
 
-        <RekapModal
-          open={rekapOpen} onClose={() => setRekapOpen(false)}
-          poles={poles} poleData={poleData}
-          effectiveSchoors={effectiveSchoors} gardus={gardus}
-          jenisJaringan={jenisJaringan} statusJaringan={statusJaringan}
-          totalLengthM={totalLengthM}
-          tinggiTiang={tinggiTiang} materialTiang={materialTiang} jarakGawang={jarakGawang}
-          kondukturUkuran={kondukturUkuran}
-          activeBranchCount={activeBranchIdxs.size}
-          savedLayerStats={savedLayerStats}
-        />
-
-        <RabExportModal
-          open={rabModalOpen}
-          onClose={() => setRabModalOpen(false)}
-          rabSummary={rabSummary}
-          projectName={savedLayers.length > 0 ? savedLayers.map(l => l.label).join(" + ") : `${statusJaringan} ${jenisJaringan}`}
-        />
-
-        {selectedGarduIdx !== null && (
-          <GarduModal
-            selectedGarduIdx={selectedGarduIdx} gardus={gardus} tempGardu={tempGardu}
-            setTempGardu={setTempGardu} trafoOptions={trafoOptions}
-            onSave={saveGardu} onRemove={removeGardu} onClose={() => setSelectedGarduIdx(null)}
-          />
-        )}
-
-        {selectedSchoorIdx !== null && (
-          <SchoorModal
-            selectedSchoorIdx={selectedSchoorIdx} schoors={schoors} tempSchoor={tempSchoor}
-            setTempSchoor={setTempSchoor} poleData={poleData} autoSchoor={autoSchoor}
-            autoSchoorThreshold={autoSchoorThreshold}
-            onSave={saveSchoor} onRemove={removeSchoor} onClose={() => setSelectedSchoorIdx(null)}
-          />
-        )}
-
-        {/* Modal edit konstruksi — active layer */}
-        {selectedKonstruksiIdx !== null && (() => {
-          const pd = poleData[selectedKonstruksiIdx];
-          if (!pd) return null;
-          const computedShort = pd.jtmTypeShort || pd.jtrTypeShort || pd.skutmTypeShort || pd.kabelTypeShort;
-          const computedLong = pd.jtmTypeLong || pd.jtrTypeLong || pd.skutmTypeLong || pd.kabelTypeLong;
-          if (!computedShort) return null;
-          return (
-            <KonstruksiModal
-              jenisJaringan={jenisJaringan}
-              computedShort={computedShort}
-              computedLong={computedLong}
-              overrideValue={konstruksiOverrides[selectedKonstruksiIdx]}
-              onSave={(val) => {
-                commitHistory(`Edit konstruksi tiang #${selectedKonstruksiIdx + 1}`);
-                setKonstruksiOverrides(prev => {
-                  const next = { ...prev };
-                  if (val === undefined) delete next[selectedKonstruksiIdx];
-                  else next[selectedKonstruksiIdx] = val;
-                  return next;
-                });
-                setSelectedKonstruksiIdx(null);
-              }}
-              onClose={() => setSelectedKonstruksiIdx(null)}
-            />
-          );
-        })()}
-
-        {/* Modal edit konstruksi — saved layer */}
-        {selectedKonstruksiSaved !== null && (() => {
-          const layer = savedLayers.find(l => l.id === selectedKonstruksiSaved.layerId);
-          if (!layer) return null;
-          const computedShort = computeKonstruksiShort(layer, selectedKonstruksiSaved.poleIdx);
-          if (!computedShort) return null;
-          return (
-            <KonstruksiModal
-              jenisJaringan={layer.jenisJaringan}
-              computedShort={computedShort}
-              computedLong={computedShort}
-              overrideValue={(layer.konstruksiOverrides ?? {})[selectedKonstruksiSaved.poleIdx]}
-              onSave={(val) => {
-                commitHistory(`Edit konstruksi tiang tersimpan #${selectedKonstruksiSaved.poleIdx + 1}`);
-                setSavedLayers(prev => prev.map(l => {
-                  if (l.id !== selectedKonstruksiSaved.layerId) return l;
-                  const overrides = { ...(l.konstruksiOverrides ?? {}) };
-                  if (val === undefined) delete overrides[selectedKonstruksiSaved.poleIdx];
-                  else overrides[selectedKonstruksiSaved.poleIdx] = val;
-                  return { ...l, konstruksiOverrides: overrides };
-                }));
-                setSelectedKonstruksiSaved(null);
-              }}
-              onClose={() => setSelectedKonstruksiSaved(null)}
-            />
-          );
-        })()}
-
         {/* ─── Indikator mode sambung aktif (Tugas 1) ─────────────────────── */}
         {/* Banner mengambang di bawah search bar saat user sedang memilih titik koneksi */}
         {connectMode && (
@@ -2251,6 +2159,99 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
         </div>{/* end p-5 inner */}
         </div>{/* end w-[420px] scroll */}
       </div>{/* end sidebar */}
+
+      {/* ─── Global Modals (Root Level, Escapes Map & Sidebar Stacking Context) ─── */}
+      <RekapModal
+        open={rekapOpen} onClose={() => setRekapOpen(false)}
+        poles={poles} poleData={poleData}
+        effectiveSchoors={effectiveSchoors} gardus={gardus}
+        jenisJaringan={jenisJaringan} statusJaringan={statusJaringan}
+        totalLengthM={totalLengthM}
+        tinggiTiang={tinggiTiang} materialTiang={materialTiang} jarakGawang={jarakGawang}
+        kondukturUkuran={kondukturUkuran}
+        activeBranchCount={activeBranchIdxs.size}
+        savedLayerStats={savedLayerStats}
+      />
+
+      <RabExportModal
+        open={rabModalOpen}
+        onClose={() => setRabModalOpen(false)}
+        rabSummary={rabSummary}
+        projectName={savedLayers.length > 0 ? savedLayers.map(l => l.label).join(" + ") : `${statusJaringan} ${jenisJaringan}`}
+      />
+
+      {selectedGarduIdx !== null && (
+        <GarduModal
+          selectedGarduIdx={selectedGarduIdx} gardus={gardus} tempGardu={tempGardu}
+          setTempGardu={setTempGardu} trafoOptions={trafoOptions}
+          onSave={saveGardu} onRemove={removeGardu} onClose={() => setSelectedGarduIdx(null)}
+        />
+      )}
+
+      {selectedSchoorIdx !== null && (
+        <SchoorModal
+          selectedSchoorIdx={selectedSchoorIdx} schoors={schoors} tempSchoor={tempSchoor}
+          setTempSchoor={setTempSchoor} poleData={poleData} autoSchoor={autoSchoor}
+          autoSchoorThreshold={autoSchoorThreshold}
+          onSave={saveSchoor} onRemove={removeSchoor} onClose={() => setSelectedSchoorIdx(null)}
+        />
+      )}
+
+      {/* Modal edit konstruksi — active layer */}
+      {selectedKonstruksiIdx !== null && (() => {
+        const pd = poleData[selectedKonstruksiIdx];
+        if (!pd) return null;
+        const computedShort = pd.jtmTypeShort || pd.jtrTypeShort || pd.skutmTypeShort || pd.kabelTypeShort;
+        const computedLong = pd.jtmTypeLong || pd.jtrTypeLong || pd.skutmTypeLong || pd.kabelTypeLong;
+        if (!computedShort) return null;
+        return (
+          <KonstruksiModal
+            jenisJaringan={jenisJaringan}
+            computedShort={computedShort}
+            computedLong={computedLong}
+            overrideValue={konstruksiOverrides[selectedKonstruksiIdx]}
+            onSave={(val) => {
+              commitHistory(`Edit konstruksi tiang #${selectedKonstruksiIdx + 1}`);
+              setKonstruksiOverrides(prev => {
+                const next = { ...prev };
+                if (val === undefined) delete next[selectedKonstruksiIdx];
+                else next[selectedKonstruksiIdx] = val;
+                return next;
+              });
+              setSelectedKonstruksiIdx(null);
+            }}
+            onClose={() => setSelectedKonstruksiIdx(null)}
+          />
+        );
+      })()}
+
+      {/* Modal edit konstruksi — saved layer */}
+      {selectedKonstruksiSaved !== null && (() => {
+        const layer = savedLayers.find(l => l.id === selectedKonstruksiSaved.layerId);
+        if (!layer) return null;
+        const computedShort = computeKonstruksiShort(layer, selectedKonstruksiSaved.poleIdx);
+        if (!computedShort) return null;
+        return (
+          <KonstruksiModal
+            jenisJaringan={layer.jenisJaringan}
+            computedShort={computedShort}
+            computedLong={computedShort}
+            overrideValue={(layer.konstruksiOverrides ?? {})[selectedKonstruksiSaved.poleIdx]}
+            onSave={(val) => {
+              commitHistory(`Edit konstruksi tiang tersimpan #${selectedKonstruksiSaved.poleIdx + 1}`);
+              setSavedLayers(prev => prev.map(l => {
+                if (l.id !== selectedKonstruksiSaved.layerId) return l;
+                const overrides = { ...(l.konstruksiOverrides ?? {}) };
+                if (val === undefined) delete overrides[selectedKonstruksiSaved.poleIdx];
+                else overrides[selectedKonstruksiSaved.poleIdx] = val;
+                return { ...l, konstruksiOverrides: overrides };
+              }));
+              setSelectedKonstruksiSaved(null);
+            }}
+            onClose={() => setSelectedKonstruksiSaved(null)}
+          />
+        );
+      })()}
     </div>
   );
 }

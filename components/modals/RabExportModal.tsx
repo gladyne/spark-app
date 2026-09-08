@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import type { RabSummary, RabItemResult, RabCategory } from "../../lib/rab/types";
 import { exportRabToExcel, triggerExcelDownload } from "../../lib/rab/rabExcelExporter";
 
@@ -17,6 +18,7 @@ export default function RabExportModal({
   rabSummary,
   projectName = "SPARK_RAB_KUPANG",
 }: Props) {
+  const [mounted, setMounted] = useState(false);
   const [selectedTab, setSelectedTab] = useState<"all" | "jtm" | "gardu" | "jtr" | "warnings">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -24,6 +26,10 @@ export default function RabExportModal({
   const [exportSuccess, setExportSuccess] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const filteredItems = useMemo(() => {
     return rabSummary.items.filter(item => {
@@ -44,7 +50,7 @@ export default function RabExportModal({
     });
   }, [rabSummary.items, selectedTab, searchQuery]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -85,13 +91,13 @@ export default function RabExportModal({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-[3500] flex items-center justify-center p-3 sm:p-4 md:p-6">
+  const modalContent = (
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 md:p-6 overflow-hidden">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-md transition-opacity" onClick={onClose} />
+      <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-md transition-opacity" onClick={onClose} />
 
       {/* Modal Container */}
-      <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200/80 animate-in fade-in zoom-in-95 duration-200">
+      <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200/80 animate-in fade-in zoom-in-95 duration-200 z-10">
 
         {/* ─── Header ─── */}
         <div className="relative overflow-hidden bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 px-6 py-5 flex-shrink-0 text-white">
@@ -325,97 +331,118 @@ export default function RabExportModal({
         </div>
 
         {/* ─── Footer: Template File & Export Action ─── */}
-        <div className="bg-slate-50 border-t border-slate-200/80 px-6 py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 flex-shrink-0">
+        <div className="bg-slate-50 border-t border-slate-200/80 px-6 py-4 flex flex-col gap-3.5 flex-shrink-0">
 
-          {/* Template Selection */}
-          <div className="flex flex-wrap items-center gap-3">
-            <input
-              type="file"
-              ref={fileInputRef}
-              onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
-              onChange={handleFileChange}
-              accept=".xlsx,.xls"
-              className="hidden"
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold border flex items-center gap-2 transition shadow-sm ${
-                uploadedFile
-                  ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
-                  : "border-amber-400 bg-amber-50 text-amber-900 hover:bg-amber-100 animate-pulse"
-              }`}
-            >
-              <span>📁</span>
-              {uploadedFile ? "Ganti Template Excel..." : "Upload Template Excel (Template_RAB_KHS_2026_UP3_Kupang.xlsx)"}
-            </button>
-
-            {uploadedFile ? (
-              <div className="flex items-center gap-1.5 text-xs text-emerald-800 font-semibold bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-300">
-                <span>✓</span>
-                <span className="truncate max-w-[220px]" title={uploadedFile.name}>
-                  {uploadedFile.name}
-                </span>
-                <span className="text-[10px] text-emerald-600">
-                  ({Math.round(uploadedFile.size / 1024)} KB)
-                </span>
-                <button
-                  onClick={() => { setUploadedFile(null); setExportError(null); }}
-                  className="text-slate-400 hover:text-red-500 ml-1 font-bold"
-                  title="Hapus template"
-                >
-                  ✕
-                </button>
+          {/* Dedicated Error Alert if any */}
+          {exportError && (
+            <div className="w-full bg-red-50 border border-red-200/80 rounded-2xl px-4 py-3 flex items-start justify-between gap-3 text-xs text-red-800 shadow-sm animate-in fade-in duration-150">
+              <div className="flex items-start gap-2.5">
+                <span className="text-base flex-shrink-0 mt-0.5">⚠️</span>
+                <div className="leading-relaxed">
+                  <span className="font-extrabold text-red-900 block mb-0.5">Gagal Memproses Ekspor:</span>
+                  <span>{exportError}</span>
+                </div>
               </div>
-            ) : (
-              <span className="text-[11px] text-amber-700 font-semibold flex items-center gap-1">
-                <span>⚠️</span> Template asli wajib di-upload sebelum ekspor
-              </span>
-            )}
-          </div>
+              <button
+                onClick={() => setExportError(null)}
+                className="text-red-400 hover:text-red-700 font-bold p-1 transition-colors flex-shrink-0"
+                title="Tutup pesan error"
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2.5">
-            {exportError && (
-              <span className="text-xs font-bold text-red-600 truncate max-w-xs">{exportError}</span>
-            )}
-            {exportSuccess && (
-              <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">
-                <span>🎉</span> Berhasil diunduh!
-              </span>
-            )}
+          {/* Success Banner if any */}
+          {exportSuccess && (
+            <div className="w-full bg-emerald-50 border border-emerald-300 rounded-2xl px-4 py-2.5 flex items-center gap-2.5 text-xs text-emerald-800 shadow-sm font-semibold animate-in fade-in duration-150">
+              <span className="text-base flex-shrink-0">🎉</span>
+              <span>File Excel berhasil diperbarui dan diunduh ke komputer Anda!</span>
+            </div>
+          )}
 
-            <button
-              onClick={onClose}
-              className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200 transition"
-            >
-              Batal
-            </button>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+            {/* Template Selection */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
+                onChange={handleFileChange}
+                accept=".xlsx,.xls"
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold border flex items-center gap-2 transition shadow-sm ${
+                  uploadedFile
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                    : "border-amber-400 bg-amber-50 text-amber-900 hover:bg-amber-100 animate-pulse"
+                }`}
+              >
+                <span>📁</span>
+                {uploadedFile ? "Ganti Template Excel..." : "Upload Template Excel (Template_RAB_KHS_2026_UP3_Kupang.xlsx)"}
+              </button>
 
-            <button
-              onClick={handleExport}
-              disabled={isExporting || rabSummary.items.length === 0 || !uploadedFile}
-              title={!uploadedFile ? "Silakan upload file template RAB terlebih dahulu" : "Ekspor volume ke template Excel"}
-              className={`px-5 py-2.5 rounded-xl text-xs font-bold text-white flex items-center gap-2 transition shadow-lg ${
-                isExporting || rabSummary.items.length === 0 || !uploadedFile
-                  ? "bg-slate-300 cursor-not-allowed shadow-none"
-                  : "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 shadow-emerald-600/30 hover:shadow-emerald-600/50 hover:-translate-y-0.5 active:translate-y-0"
-              }`}
-            >
-              {isExporting ? (
-                <>
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                  </svg>
-                  <span>Menyusun Excel...</span>
-                </>
+              {uploadedFile ? (
+                <div className="flex items-center gap-1.5 text-xs text-emerald-800 font-semibold bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-300">
+                  <span>✓</span>
+                  <span className="truncate max-w-[200px] sm:max-w-[280px]" title={uploadedFile.name}>
+                    {uploadedFile.name}
+                  </span>
+                  <span className="text-[10px] text-emerald-600">
+                    ({Math.round(uploadedFile.size / 1024)} KB)
+                  </span>
+                  <button
+                    onClick={() => { setUploadedFile(null); setExportError(null); }}
+                    className="text-slate-400 hover:text-red-500 ml-1 font-bold"
+                    title="Hapus template"
+                  >
+                    ✕
+                  </button>
+                </div>
               ) : (
-                <>
-                  <span>📥</span>
-                  <span>Ekspor Excel RAB Terisi</span>
-                </>
+                <span className="text-[11px] text-amber-700 font-semibold flex items-center gap-1">
+                  <span>⚠️</span> Wajib upload template 15 sheet sebelum ekspor
+                </span>
               )}
-            </button>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end gap-2.5 flex-shrink-0">
+              <button
+                onClick={onClose}
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200 transition cursor-pointer"
+              >
+                Batal
+              </button>
+
+              <button
+                onClick={handleExport}
+                disabled={isExporting || rabSummary.items.length === 0 || !uploadedFile}
+                title={!uploadedFile ? "Silakan upload file template RAB terlebih dahulu" : "Ekspor volume ke template Excel"}
+                className={`px-5 py-2.5 rounded-xl text-xs font-bold text-white flex items-center gap-2 transition shadow-lg ${
+                  isExporting || rabSummary.items.length === 0 || !uploadedFile
+                    ? "bg-slate-300 cursor-not-allowed shadow-none"
+                    : "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 shadow-emerald-600/30 hover:shadow-emerald-600/50 hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
+                }`}
+              >
+                {isExporting ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                    </svg>
+                    <span>Menyusun Excel...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>📥</span>
+                    <span>Ekspor Excel RAB Terisi</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
         </div>
@@ -423,4 +450,6 @@ export default function RabExportModal({
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }
