@@ -48,21 +48,27 @@ export default function RabExportModal({
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setUploadedFile(e.target.files[0]);
+      const file = e.target.files[0];
+      console.log("[RabExportModal] File template dipilih:", file.name, file.size, "bytes");
+      setUploadedFile(file);
       setExportError(null);
     }
   };
 
   const handleExport = async () => {
+    if (!uploadedFile) {
+      setExportError("Silakan upload file template RAB terlebih dahulu (Template_RAB_KHS_2026_UP3_Kupang.xlsx).");
+      fileInputRef.current?.click();
+      return;
+    }
+
     setIsExporting(true);
     setExportError(null);
     setExportSuccess(false);
 
     try {
-      let buffer: ArrayBuffer | null = null;
-      if (uploadedFile) {
-        buffer = await uploadedFile.arrayBuffer();
-      }
+      console.log("[RabExportModal] Memulai ekspor dengan file template:", uploadedFile.name);
+      const buffer = await uploadedFile.arrayBuffer();
 
       const timestamp = new Date().toISOString().slice(0, 10);
       const filename = `RAB_PLN_UP3_Kupang_${projectName.replace(/\s+/g, "_")}_${timestamp}.xlsx`;
@@ -322,37 +328,47 @@ export default function RabExportModal({
         <div className="bg-slate-50 border-t border-slate-200/80 px-6 py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 flex-shrink-0">
 
           {/* Template Selection */}
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <input
               type="file"
               ref={fileInputRef}
+              onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
               onChange={handleFileChange}
               accept=".xlsx,.xls"
               className="hidden"
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 flex items-center gap-2 transition shadow-sm"
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold border flex items-center gap-2 transition shadow-sm ${
+                uploadedFile
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                  : "border-amber-400 bg-amber-50 text-amber-900 hover:bg-amber-100 animate-pulse"
+              }`}
             >
               <span>📁</span>
-              {uploadedFile ? "Ganti File Template..." : "Pilih Template Excel (KHS 2026)"}
+              {uploadedFile ? "Ganti Template Excel..." : "Upload Template Excel (Template_RAB_KHS_2026_UP3_Kupang.xlsx)"}
             </button>
 
             {uploadedFile ? (
-              <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-semibold bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
+              <div className="flex items-center gap-1.5 text-xs text-emerald-800 font-semibold bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-300">
                 <span>✓</span>
-                <span className="truncate max-w-[200px]">{uploadedFile.name}</span>
+                <span className="truncate max-w-[220px]" title={uploadedFile.name}>
+                  {uploadedFile.name}
+                </span>
+                <span className="text-[10px] text-emerald-600">
+                  ({Math.round(uploadedFile.size / 1024)} KB)
+                </span>
                 <button
-                  onClick={() => setUploadedFile(null)}
+                  onClick={() => { setUploadedFile(null); setExportError(null); }}
                   className="text-slate-400 hover:text-red-500 ml-1 font-bold"
-                  title="Hapus template kustom"
+                  title="Hapus template"
                 >
                   ✕
                 </button>
               </div>
             ) : (
-              <span className="text-[11px] text-slate-500">
-                (Default: Template Standar Formula-Enabled)
+              <span className="text-[11px] text-amber-700 font-semibold flex items-center gap-1">
+                <span>⚠️</span> Template asli wajib di-upload sebelum ekspor
               </span>
             )}
           </div>
@@ -377,9 +393,10 @@ export default function RabExportModal({
 
             <button
               onClick={handleExport}
-              disabled={isExporting || rabSummary.items.length === 0}
+              disabled={isExporting || rabSummary.items.length === 0 || !uploadedFile}
+              title={!uploadedFile ? "Silakan upload file template RAB terlebih dahulu" : "Ekspor volume ke template Excel"}
               className={`px-5 py-2.5 rounded-xl text-xs font-bold text-white flex items-center gap-2 transition shadow-lg ${
-                isExporting || rabSummary.items.length === 0
+                isExporting || rabSummary.items.length === 0 || !uploadedFile
                   ? "bg-slate-300 cursor-not-allowed shadow-none"
                   : "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 shadow-emerald-600/30 hover:shadow-emerald-600/50 hover:-translate-y-0.5 active:translate-y-0"
               }`}
