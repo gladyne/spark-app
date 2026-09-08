@@ -2,11 +2,26 @@ export type GarduConfig = {
   jenis: "Cantol" | "Portal";
   orientasi: "Horizontal" | "Vertikal";
   trafo: string;
+  fasa?: "1 phs" | "3 phs";
+  lvBoardType?: "2 Jurusan" | "4 Jurusan";
+  pipaSize?: '2.5"' | '3"';
 };
 
 export type SchoorConfig = {
   jenis: "Treck" | "Druck" | "Kontramast";
   rotation?: number; // override arah 0-359°, undefined = auto bisector
+};
+
+export type PoleAttributeConfig = {
+  material?: "Beton" | "Baja";
+  tinggi?: number;
+  kekuatan?: number;
+  posisi?: "Tumpu" | "Topang-Sudut" | "Ujung";
+  isolator?: "Porcelin" | "Polimer";
+  hasCutOut?: boolean;
+  hasArrester?: boolean;
+  hasGrounding?: boolean;
+  rabCategory?: "JTM" | "GARDU" | "JTR";
 };
 
 export type NetworkLayer = {
@@ -20,6 +35,12 @@ export type NetworkLayer = {
   jarakGawang: number;
   tinggiTiang: number;
   materialTiang: string;
+  kekuatanTiang?: number;
+  posisiTiang?: "Tumpu" | "Topang-Sudut" | "Ujung";
+  konduktorJenis?: "AAAC" | "AAAC/S";
+  kabelTipe?: string;
+  rabCategory?: "JTM" | "GARDU" | "JTR";
+  poleAttributes?: Record<number, PoleAttributeConfig>;
   gardus: Record<number, GarduConfig>;
   schoors: Record<number, SchoorConfig>;
   konstruksiOverrides: Record<number, string>;

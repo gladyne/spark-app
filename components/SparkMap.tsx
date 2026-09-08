@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, Fragment, useEffect, useCallback } from "react";
+import { useState, useRef, Fragment, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { MapContainer, TileLayer, Marker, Popup, Polyline, LayersControl } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -31,6 +31,8 @@ import TentikanTitikCard from "./sidebar/TentikanTitikCard";
 import LayerManager from "./sidebar/LayerManager";
 import ExecCard from "./sidebar/ExecCard";
 import RekapModal, { type LayerStat } from "./modals/RekapModal";
+import RabExportModal from "./modals/RabExportModal";
+import { calculateRabVolumes } from "../lib/rab/rabMapper";
 import { exportToPdf } from "../lib/exportPdf";
 
 const DefaultIcon = L.icon({
@@ -364,10 +366,15 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
   const [jarakGawang, setJarakGawang] = useState(50);
   const [tinggiTiang, setTinggiTiang] = useState(12);
   const [materialTiang, setMaterialTiang] = useState("Beton");
+  const [kekuatanTiang, setKekuatanTiang] = useState<number>(350);
+  const [posisiTiang, setPosisiTiang] = useState<"Tumpu" | "Topang-Sudut" | "Ujung">("Tumpu");
+  const [konduktorJenis, setKonduktorJenis] = useState<"AAAC" | "AAAC/S">("AAAC/S");
+  const [rabCategory, setRabCategory] = useState<"JTM" | "GARDU" | "JTR" | "AUTO">("AUTO");
+  const [rabModalOpen, setRabModalOpen] = useState(false);
   const [kondukturUkuran, setKondukturUkuran] = useState(70);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  const trafoOptions = ["25 kVA", "50 kVA", "100 kVA", "160 kVA", "200 kVA", "250 kVA", "315 kVA", "400 kVA", "630 kVA"];
+  const trafoOptions = ["25 kVA", "50 kVA", "100 kVA", "160 kVA", "200 kVA", "250 kVA", "315 kVA", "400 kVA", "630 kVA", "1000 kVA"];
   const isKabelTanah = jenisJaringan === "SKTM" || jenisJaringan === "SKTR";
   const [rotatingSchoor, setRotatingSchoor] = useState<{ poleIdx: number; cx: number; cy: number; } | null>(null);
 
@@ -956,6 +963,8 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
     const layer: NetworkLayer = {
       id, label, poles: [...poles], line: [...line],
       jenisJaringan, statusJaringan, offsetSide, jarakGawang, tinggiTiang, materialTiang,
+      kekuatanTiang, posisiTiang, konduktorJenis,
+      rabCategory: (rabCategory === "AUTO" ? undefined : rabCategory) as any,
       kondukturUkuran,
       gardus: { ...gardus }, schoors: { ...schoors },
       konstruksiOverrides: { ...konstruksiOverrides },
@@ -1034,6 +1043,11 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
     setJenisJaringan(layer.jenisJaringan); setStatusJaringan(layer.statusJaringan);
     setOffsetSide(layer.offsetSide); setJarakGawang(layer.jarakGawang);
     setTinggiTiang(layer.tinggiTiang); setMaterialTiang(layer.materialTiang);
+    if (layer.kekuatanTiang) setKekuatanTiang(layer.kekuatanTiang);
+    if (layer.posisiTiang) setPosisiTiang(layer.posisiTiang);
+    if (layer.konduktorJenis) setKonduktorJenis(layer.konduktorJenis);
+    if (layer.rabCategory) setRabCategory(layer.rabCategory as any);
+    else setRabCategory("AUTO");
     setKondukturUkuran(layer.kondukturUkuran ?? 70);
     setGardus(layer.gardus); setSchoors(layer.schoors);
     setKonstruksiOverrides(layer.konstruksiOverrides ?? {});
@@ -1398,6 +1412,72 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
     } catch (e) { console.error("Gagal membuat garis paralel", e); }
   }
 
+  // ─── Kalkulasi RAB Otomatis (PLN UP3 Kupang KHS 2026) ─────────────────────
+  const rabSummary = useMemo(() => {
+    if (!rabModalOpen) {
+      return {
+        items: [],
+        warnings: [],
+        totalJtmItems: 0,
+        totalGarduItems: 0,
+        totalJtrItems: 0,
+        totalVolumeJtm: 0,
+        totalVolumeGardu: 0,
+        totalVolumeJtr: 0,
+      };
+    }
+
+    const layersForRab = [
+      ...(poles.length > 0 ? [{
+        id: ACTIVE_LAYER_ID,
+        label: "Draft Aktif",
+        poles,
+        line,
+        jenisJaringan,
+        statusJaringan,
+        offsetSide,
+        jarakGawang,
+        tinggiTiang,
+        materialTiang,
+        kekuatanTiang,
+        posisiTiang,
+        konduktorJenis,
+        rabCategory: (rabCategory === "AUTO" ? undefined : rabCategory) as any,
+        gardus,
+        schoors: effectiveSchoors,
+        konstruksiOverrides,
+        kondukturUkuran,
+        poleData,
+      }] : []),
+      ...savedLayers.map(l => ({
+        id: l.id,
+        label: l.label,
+        poles: l.poles,
+        line: l.line,
+        jenisJaringan: l.jenisJaringan,
+        statusJaringan: l.statusJaringan,
+        offsetSide: l.offsetSide,
+        jarakGawang: l.jarakGawang,
+        tinggiTiang: l.tinggiTiang,
+        materialTiang: l.materialTiang,
+        kekuatanTiang: l.kekuatanTiang,
+        posisiTiang: l.posisiTiang,
+        konduktorJenis: l.konduktorJenis,
+        rabCategory: l.rabCategory,
+        gardus: l.gardus,
+        schoors: l.schoors,
+        konstruksiOverrides: l.konstruksiOverrides,
+        kondukturUkuran: l.kondukturUkuran,
+      })),
+    ];
+
+    return calculateRabVolumes(layersForRab);
+  }, [
+    rabModalOpen, poles, line, jenisJaringan, statusJaringan, offsetSide, jarakGawang,
+    tinggiTiang, materialTiang, kekuatanTiang, posisiTiang, konduktorJenis, rabCategory,
+    gardus, effectiveSchoors, konstruksiOverrides, kondukturUkuran, poleData, savedLayers,
+  ]);
+
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="flex h-screen w-full font-sans text-gray-800">
@@ -1415,6 +1495,13 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
           kondukturUkuran={kondukturUkuran}
           activeBranchCount={activeBranchIdxs.size}
           savedLayerStats={savedLayerStats}
+        />
+
+        <RabExportModal
+          open={rabModalOpen}
+          onClose={() => setRabModalOpen(false)}
+          rabSummary={rabSummary}
+          projectName={savedLayers.length > 0 ? savedLayers.map(l => l.label).join(" + ") : `${statusJaringan} ${jenisJaringan}`}
         />
 
         {selectedGarduIdx !== null && (
@@ -2060,12 +2147,30 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
           </button>
         </div>
 
+        {/* Tombol Aksi RAB Excel UP3 Kupang */}
+        <button
+          onClick={() => setRabModalOpen(true)}
+          disabled={poles.length === 0 && savedLayers.length === 0}
+          className={`w-full py-3 px-3 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-md
+            ${poles.length > 0 || savedLayers.length > 0
+              ? "text-white bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 shadow-emerald-600/30 hover:shadow-emerald-600/50 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 border border-emerald-400/20"
+              : "text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed"
+            }`}
+        >
+          <span className="text-base">📊</span>
+          Auto-Fill RAB Excel (UP3 Kupang)
+        </button>
+
         <NetworkSettings
           jenisJaringan={jenisJaringan} setJenisJaringan={setJenisJaringan}
           statusJaringan={statusJaringan} setStatusJaringan={setStatusJaringan}
           jarakGawang={jarakGawang} setJarakGawang={setJarakGawang}
           tinggiTiang={tinggiTiang} setTinggiTiang={setTinggiTiang}
           materialTiang={materialTiang} setMaterialTiang={setMaterialTiang}
+          kekuatanTiang={kekuatanTiang} setKekuatanTiang={setKekuatanTiang}
+          posisiTiang={posisiTiang} setPosisiTiang={setPosisiTiang}
+          konduktorJenis={konduktorJenis} setKonduktorJenis={setKonduktorJenis}
+          rabCategory={rabCategory} setRabCategory={setRabCategory}
           offsetSide={offsetSide} setOffsetSide={setOffsetSide}
           isKabelTanah={isKabelTanah}
           kondukturUkuran={kondukturUkuran} setKondukturUkuran={setKondukturUkuran}

@@ -1,0 +1,19 @@
+{
+  "name": "SPARK Pemetaan Kelistrikan",
+  "short_name": "SPARK Field",
+  "description": "Sistem Pemetaan Pintar Rencana Kelistrikan PLN — Field Asset Viewer",
+  "start_url": "/field",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0284c7",
+  "orientation": "portrait",
+  "scope": "/field",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
