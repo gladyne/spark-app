@@ -74,45 +74,11 @@ export async function exportRabToExcel(
   console.log(`[exportRabToExcel] Membaca file template via JSZip (${templateBuffer.byteLength} bytes)...`);
   const zip = await JSZip.loadAsync(templateBuffer);
 
-  // ─── 1. Update workbook.xml: Aktifkan fullCalcOnLoad="1" (Pertahankan calcMode="manual") ─
+  // ─── 1. Baca xl/workbook.xml untuk mencari sheet "RAB Pasang" ─────────────────
   const wbXml = await zip.file("xl/workbook.xml")?.async("text");
   if (!wbXml) {
     throw new Error("File yang diunggah bukan file Excel (.xlsx) yang valid (xl/workbook.xml tidak ditemukan).");
   }
-
-  let updatedWbXml = wbXml;
-  if (/<calcPr[\s>]/i.test(updatedWbXml)) {
-    updatedWbXml = updatedWbXml.replace(/<calcPr(\s+[^>]*?)?(\/?)>/i, (_match, attrs = "") => {
-      let cleanAttrs = (attrs || "").replace(/\/$/, "").trim();
-      if (/fullCalcOnLoad="[^"]*"/i.test(cleanAttrs)) {
-        cleanAttrs = cleanAttrs.replace(/fullCalcOnLoad="[^"]*"/i, 'fullCalcOnLoad="1"');
-      } else {
-        cleanAttrs = `${cleanAttrs} fullCalcOnLoad="1"`;
-      }
-      return `<calcPr ${cleanAttrs}/>`;
-    });
-  } else {
-    updatedWbXml = updatedWbXml.replace("</workbook>", '<calcPr fullCalcOnLoad="1"/></workbook>');
-  }
-  zip.file("xl/workbook.xml", updatedWbXml);
-
-  // ─── 2. Hapus stale xl/calcChain.xml & referensinya agar Excel membangun ulang urutan kalkulasi ─
-  zip.remove("xl/calcChain.xml");
-
-  let relsXml = await zip.file("xl/_rels/workbook.xml.rels")?.async("text");
-  if (relsXml) {
-    relsXml = relsXml.replace(/<Relationship[^>]*Target="calcChain\.xml"[^>]*\/>/gi, "");
-    relsXml = relsXml.replace(/<Relationship[^>]*Type="[^"]*\/calcChain"[^>]*\/>/gi, "");
-    zip.file("xl/_rels/workbook.xml.rels", relsXml);
-  }
-
-  let ctXml = await zip.file("[Content_Types].xml")?.async("text");
-  if (ctXml) {
-    ctXml = ctXml.replace(/<Override[^>]*PartName="\/xl\/calcChain\.xml"[^>]*\/>/gi, "");
-    zip.file("[Content_Types].xml", ctXml);
-  }
-
-  // ─── 3. Cari Sheet "RAB Pasang" ──────────────────────────────────────────
   const sheetRegex = /<sheet\s+[^>]*name="([^"]+)"[^>]*sheetId="([^"]+)"[^>]*r:id="([^"]+)"/gi;
   let m: RegExpExecArray | null;
   const sheetList: { name: string; sheetId: string; rId: string }[] = [];
@@ -136,6 +102,8 @@ export async function exportRabToExcel(
     );
   }
 
+  // ─── 2. Baca xl/_rels/workbook.xml.rels untuk mencari path file sheet "RAB Pasang" ─
+  let relsXml = await zip.file("xl/_rels/workbook.xml.rels")?.async("text");
   if (!relsXml) {
     throw new Error("File relasi workbook (xl/_rels/workbook.xml.rels) tidak ditemukan.");
   }
@@ -181,10 +149,47 @@ export async function exportRabToExcel(
     }
   }
 
-  console.log(`[exportRabToExcel] Sukses mengupdate ${filledCellsCount} cell volume pada ${updatesByRow.size} baris. Mengemas ulang zip...`);
-
   // Perbarui file XML worksheet di dalam zip (semua file drawing, media, sheet lain TETAP 100% ASLI)
   zip.file(sheetPath, sheetXml);
+
+  // ─── Update workbook.xml: Pastikan fullCalcOnLoad="1" (Pertahankan calcMode="manual") ─
+  let updatedWbXml = (await zip.file("xl/workbook.xml")?.async("text")) || "";
+  if (updatedWbXml) {
+    if (updatedWbXml.includes('<calcPr calcId="191029" calcMode="manual"/>')) {
+      updatedWbXml = updatedWbXml.replace(
+        '<calcPr calcId="191029" calcMode="manual"/>',
+        '<calcPr calcId="191029" calcMode="manual" fullCalcOnLoad="1"/>'
+      );
+    } else if (/<calcPr[\s>]/i.test(updatedWbXml)) {
+      updatedWbXml = updatedWbXml.replace(/<calcPr(\s+[^>]*?)?(\/?)>/i, (_match, attrs = "") => {
+        let cleanAttrs = (attrs || "").replace(/\/$/, "").trim();
+        if (/fullCalcOnLoad="[^"]*"/i.test(cleanAttrs)) {
+          cleanAttrs = cleanAttrs.replace(/fullCalcOnLoad="[^"]*"/i, 'fullCalcOnLoad="1"');
+        } else {
+          cleanAttrs = `${cleanAttrs} fullCalcOnLoad="1"`;
+        }
+        return `<calcPr ${cleanAttrs}/>`;
+      });
+    } else {
+      updatedWbXml = updatedWbXml.replace("</workbook>", '<calcPr fullCalcOnLoad="1"/></workbook>');
+    }
+    zip.file("xl/workbook.xml", updatedWbXml);
+  }
+
+  // ─── Hapus stale xl/calcChain.xml & referensinya agar Excel membangun ulang urutan kalkulasi ─
+  zip.remove("xl/calcChain.xml");
+
+  if (relsXml) {
+    relsXml = relsXml.replace(/<Relationship[^>]*Target="calcChain\.xml"[^>]*\/>/gi, "");
+    relsXml = relsXml.replace(/<Relationship[^>]*Type="[^"]*\/calcChain"[^>]*\/>/gi, "");
+    zip.file("xl/_rels/workbook.xml.rels", relsXml);
+  }
+
+  let ctXml = await zip.file("[Content_Types].xml")?.async("text");
+  if (ctXml) {
+    ctXml = ctXml.replace(/<Override[^>]*PartName="\/xl\/calcChain\.xml"[^>]*\/>/gi, "");
+    zip.file("[Content_Types].xml", ctXml);
+  }
 
   const outBuffer = await zip.generateAsync({
     type: "uint8array",
