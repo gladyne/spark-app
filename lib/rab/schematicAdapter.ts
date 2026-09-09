@@ -15,14 +15,14 @@ export function convertSchematicToRabLayers(schematic: SchematicData): LayerInpu
   const { nodes, edges, kop } = schematic;
 
   // Pisahkan nodes
-  const rencanaPoles = nodes.filter(n => n.type === "tiang-rencana");
+  const rencanaPoles = nodes.filter(n => n.type === "tiang-rencana" || n.type === "tiang-tm" || n.type === "tiang-tr");
   const existingPoles = nodes.filter(n => n.type === "tiang-existing");
   const garduNodes = nodes.filter(n => n.type === "gardu");
   const boxAppNodes = nodes.filter(n => n.type === "box-app");
   const kontramastNodes = nodes.filter(n => n.type === "kontramast");
 
   // Pisahkan edges
-  const rencanaEdges = edges.filter(e => e.type === "kabel-rencana");
+  const rencanaEdges = edges.filter(e => e.type === "kabel-rencana" || e.type === "kabel-tm" || e.type === "kabel-tr");
 
   // Jika kanvas masih kosong tanpa rencana aset
   if (rencanaPoles.length === 0 && rencanaEdges.length === 0 && garduNodes.length === 0 && boxAppNodes.length === 0) {
@@ -78,7 +78,7 @@ export function convertSchematicToRabLayers(schematic: SchematicData): LayerInpu
   }>();
 
   for (const edge of rencanaEdges) {
-    const jJenis = edge.jenisJaringan || "SUTM";
+    const jJenis = edge.jenisJaringan || (edge.type === "kabel-tr" ? "SKUTR" : "SUTM");
     const kJenis = (edge.konduktorJenis === "AAAC" ? "AAAC" : "AAAC/S") as "AAAC" | "AAAC/S";
     const kUkuran = edge.kondukturUkuran || 70;
     const key = `${jJenis}__${kJenis}__${kUkuran}`;

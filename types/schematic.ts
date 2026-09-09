@@ -1,11 +1,17 @@
 export type SchematicNodeType =
   | "tiang-existing"
   | "tiang-rencana"
+  | "tiang-tm"
+  | "tiang-tr"
   | "gardu"
   | "box-app"
   | "kontramast";
 
-export type SchematicEdgeType = "kabel-existing" | "kabel-rencana";
+export type SchematicEdgeType =
+  | "kabel-existing"
+  | "kabel-rencana"
+  | "kabel-tm"
+  | "kabel-tr";
 
 export interface SchematicNode {
   id: string;
@@ -13,6 +19,7 @@ export interface SchematicNode {
   x: number;
   y: number;
   label?: string;
+  kategori?: "TM" | "TR";
 
   // Atribut Tiang (Existing / Rencana)
   materialTiang?: "Beton" | "Baja";

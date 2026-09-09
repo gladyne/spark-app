@@ -18,53 +18,55 @@ const fixLeafletIcons = () => {
   });
 };
 
+import { ASSET_COLORS } from "../../lib/assetStyles";
+
 // Custom SVG Icons for Assets
 const createAssetIcon = (type: string, status: string, isSelected: boolean) => {
   let color = "#6b7280"; // gray fallback
   let html = "";
-  const borderSize = isSelected ? "3px solid #f97316" : "2px solid white";
-  const shadow = isSelected ? "box-shadow: 0 0 10px #f97316, 0 4px 6px rgba(0,0,0,0.3)" : "box-shadow: 0 2px 4px rgba(0,0,0,0.3)";
+  const borderSize = isSelected ? `3px solid ${ASSET_COLORS.SELECTED.stroke}` : "2px solid white";
+  const shadow = isSelected ? `box-shadow: 0 0 10px ${ASSET_COLORS.SELECTED.stroke}, 0 4px 6px rgba(0,0,0,0.3)` : "box-shadow: 0 2px 4px rgba(0,0,0,0.3)";
 
   if (type === "gardu") {
     // Transformer substation (purple triangle symbol)
-    color = "#9333ea";
+    color = ASSET_COLORS.GARDU.primary;
     html = `<div style="
       width: 24px;
       height: 24px;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: #f3e8ff;
+      background: ${ASSET_COLORS.GARDU.bg};
       border: ${borderSize};
       border-radius: 4px;
       ${shadow};
     ">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="3" stroke-linejoin="round">
-        <polygon points="12,2 2,22 22,22" fill="#d8b4fe" />
+        <polygon points="12,2 2,22 22,22" fill="${ASSET_COLORS.GARDU.fill}" />
       </svg>
     </div>`;
   } else if (type === "tiang TM") {
     // Medium Voltage Pole (black circle with yellow core)
-    color = "#0f172a";
+    color = ASSET_COLORS.TIANG_TM.color;
     html = `<div style="
       width: 18px;
       height: 18px;
-      background: #eab308;
+      background: ${ASSET_COLORS.TIANG_TM.core};
       border: 3px solid ${color};
       border-radius: 50%;
-      ${isSelected ? "outline: 3px solid #f97316;" : ""}
+      ${isSelected ? `outline: 3px solid ${ASSET_COLORS.SELECTED.stroke};` : ""}
       ${shadow};
     "></div>`;
   } else if (type === "tiang TR") {
     // Low Voltage Pole (blue circle with white core)
-    color = "#0284c7";
+    color = ASSET_COLORS.TIANG_TR.color;
     html = `<div style="
       width: 16px;
       height: 16px;
-      background: #ffffff;
+      background: ${ASSET_COLORS.TIANG_TR.core};
       border: 3px solid ${color};
       border-radius: 50%;
-      ${isSelected ? "outline: 3px solid #f97316;" : ""}
+      ${isSelected ? `outline: 3px solid ${ASSET_COLORS.SELECTED.stroke};` : ""}
       ${shadow};
     "></div>`;
   } else {
@@ -289,7 +291,7 @@ export default function FieldMap({ recenterTrigger }: FieldMapProps) {
           // 1. LineString Asset (Kabel)
           if (asset.geometry?.type === "LineString") {
             const isTM = asset.asset_type === "kabel TM";
-            const color = isTM ? "#b91c1c" : "#15803d"; // Red for TM, Green for TR
+            const color = isTM ? ASSET_COLORS.KABEL_TM.stroke : ASSET_COLORS.KABEL_TR.stroke; // Red for TM, Green for TR
             const coords = asset.geometry.coordinates as [number, number][];
             const leafletCoords = coords.map((c) => [c[1], c[0]] as [number, number]);
 
@@ -299,7 +301,7 @@ export default function FieldMap({ recenterTrigger }: FieldMapProps) {
                 <Polyline
                   positions={leafletCoords}
                   pathOptions={{
-                    color: isSelected ? "#f97316" : color,
+                    color: isSelected ? ASSET_COLORS.SELECTED.stroke : color,
                     weight: isSelected ? 7 : 4,
                     opacity: 0.85,
                   }}

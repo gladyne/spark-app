@@ -2,6 +2,7 @@
 
 import React, { useMemo } from "react";
 import type { SchematicData, LegendaItem } from "../../types/schematic";
+import { ASSET_COLORS } from "../../lib/assetStyles";
 
 interface Props {
   schematic: SchematicData;
@@ -26,25 +27,33 @@ export default function TabelLegenda({ schematic }: Props) {
       });
     }
 
-    // 2. Rencana Tiang JTM (○)
-    const rencanaPoles = nodes.filter(n => n.type === "tiang-rencana");
+    // 2. Rencana Tiang TM & TR
+    const rencanaPoles = nodes.filter(n => n.type === "tiang-rencana" || n.type === "tiang-tm" || n.type === "tiang-tr");
     if (rencanaPoles.length > 0) {
       // Kelompokkan per spesifikasi tiang
-      const specs = new Map<string, number>();
+      const specs = new Map<string, { count: number; simbolType: string }>();
       rencanaPoles.forEach(p => {
+        const isTR = p.type === "tiang-tr" || p.kategori === "TR";
+        const kat = isTR ? "TR" : "TM";
         const mat = p.materialTiang || "Beton";
-        const h = p.tinggiTiang || 12;
+        const h = p.tinggiTiang || (isTR ? 9 : 12);
         const dan = p.kekuatanTiang || 200;
-        const key = `Rencana Tiang ${mat} ${h}m / ${dan} daN`;
-        specs.set(key, (specs.get(key) || 0) + 1);
+        const key = `Rencana Tiang ${kat} ${mat} ${h}m / ${dan} daN`;
+        
+        const existing = specs.get(key);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          specs.set(key, { count: 1, simbolType: isTR ? "tiang-tr" : "tiang-tm" });
+        }
       });
 
-      specs.forEach((count, desc) => {
+      specs.forEach((val, desc) => {
         list.push({
-          id: `tiang-rencana-${desc}`,
-          simbolType: "tiang-rencana",
+          id: `tiang-${desc}`,
+          simbolType: val.simbolType,
           uraian: desc,
-          vol: count,
+          vol: val.count,
           sat: "btg",
         });
       });
@@ -104,7 +113,7 @@ export default function TabelLegenda({ schematic }: Props) {
       });
     }
 
-    // 6. Kabel Existing (Garis solid)
+    // 6. Kabel Existing (Garis solid gelap)
     const existingCables = edges.filter(e => e.type === "kabel-existing");
     if (existingCables.length > 0) {
       const totalLen = existingCables.reduce((acc, c) => acc + (c.lengthM || 0), 0);
@@ -117,23 +126,33 @@ export default function TabelLegenda({ schematic }: Props) {
       });
     }
 
-    // 7. Rencana Kabel (Garis putus-putus)
-    const rencanaCables = edges.filter(e => e.type === "kabel-rencana");
+    // 7. Rencana Kabel TM (Merah) & Kabel TR (Hijau)
+    const rencanaCables = edges.filter(e => e.type !== "kabel-existing");
     if (rencanaCables.length > 0) {
-      const cSpecs = new Map<string, number>();
+      const cSpecs = new Map<string, { totalLen: number; simbolType: string }>();
       rencanaCables.forEach(c => {
-        const jj = c.jenisJaringan || "SUTM";
+        const isTR = c.type === "kabel-tr" || (c.jenisJaringan && (c.jenisJaringan.includes("TR") || c.jenisJaringan.includes("SKUTR")));
+        const jj = c.jenisJaringan || (isTR ? "SKUTR" : "SUTM");
         const kj = c.konduktorJenis || "AAAC/S";
         const ku = c.kondukturUkuran || 70;
         const key = `Rencana ${jj} ${kj} 3x${ku} mm²`;
-        cSpecs.set(key, (cSpecs.get(key) || 0) + (c.lengthM || 0));
+        
+        const existing = cSpecs.get(key);
+        if (existing) {
+          existing.totalLen += (c.lengthM || 0);
+        } else {
+          cSpecs.set(key, {
+            totalLen: (c.lengthM || 0),
+            simbolType: isTR ? "kabel-tr" : "kabel-tm",
+          });
+        }
       });
-      cSpecs.forEach((totalLen, desc) => {
+      cSpecs.forEach((val, desc) => {
         list.push({
-          id: `kabel-rencana-${desc}`,
-          simbolType: "kabel-rencana",
+          id: `kabel-${desc}`,
+          simbolType: val.simbolType,
           uraian: desc,
-          vol: totalLen,
+          vol: val.totalLen,
           sat: "ms",
         });
       });
@@ -142,44 +161,98 @@ export default function TabelLegenda({ schematic }: Props) {
     return list;
   }, [nodes, edges]);
 
-  // Render thumbnail icon mini untuk tiap jenis simbol
+  // Render thumbnail icon mini dengan konsistensi visual FieldMap.tsx
   const renderIcon = (type: string) => {
     switch (type) {
       case "tiang-existing":
         return (
-          <div className="w-4 h-4 rounded-full bg-slate-900 border border-slate-900 flex-shrink-0" />
+          <div
+            className="w-4 h-4 rounded-full border border-slate-700 flex-shrink-0"
+            style={{ backgroundColor: ASSET_COLORS.TIANG_EXISTING.color }}
+          />
         );
+      case "tiang-tm":
       case "tiang-rencana":
         return (
-          <div className="w-4 h-4 rounded-full bg-white border-2 border-slate-900 flex-shrink-0" />
+          // Titik hitam dengan core kuning (PERSIS FieldMap.tsx)
+          <div
+            className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0"
+            style={{
+              backgroundColor: ASSET_COLORS.TIANG_TM.core,
+              border: `2.5px solid ${ASSET_COLORS.TIANG_TM.color}`,
+            }}
+          />
+        );
+      case "tiang-tr":
+        return (
+          // Titik putih dengan border biru (PERSIS FieldMap.tsx)
+          <div
+            className="w-4 h-4 rounded-full flex-shrink-0"
+            style={{
+              backgroundColor: ASSET_COLORS.TIANG_TR.core,
+              border: `2.5px solid ${ASSET_COLORS.TIANG_TR.color}`,
+            }}
+          />
         );
       case "gardu":
         return (
-          <div className="w-5 h-4 border-2 border-amber-600 bg-amber-50 rounded-xs flex items-center justify-center font-bold text-[8px] text-amber-800 flex-shrink-0">
-            TR
+          // Kotak / Segitiga Ungu (PERSIS FieldMap.tsx)
+          <div
+            className="w-5 h-4.5 rounded-xs flex items-center justify-center flex-shrink-0 shadow-xs"
+            style={{
+              backgroundColor: ASSET_COLORS.GARDU.bg,
+              border: `1.5px solid ${ASSET_COLORS.GARDU.border}`,
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={ASSET_COLORS.GARDU.primary} strokeWidth="3" strokeLinejoin="round">
+              <polygon points="12,2 2,22 22,22" fill={ASSET_COLORS.GARDU.fill} />
+            </svg>
           </div>
         );
       case "box-app":
         return (
-          <div className="w-4 h-4 border-2 border-blue-600 bg-blue-50 rounded-xs flex items-center justify-center font-bold text-[7px] text-blue-800 flex-shrink-0">
+          <div
+            className="w-4 h-4 rounded-xs flex items-center justify-center font-black text-[7px] flex-shrink-0"
+            style={{
+              backgroundColor: ASSET_COLORS.BOX_APP.bg,
+              border: `2px solid ${ASSET_COLORS.BOX_APP.border}`,
+              color: ASSET_COLORS.BOX_APP.text,
+            }}
+          >
             APP
           </div>
         );
       case "kontramast":
         return (
           <div className="w-5 h-3 flex items-center justify-center">
-            <svg viewBox="0 0 24 12" className="w-full h-full text-slate-800 stroke-current" fill="none" strokeWidth="2.5">
+            <svg viewBox="0 0 24 12" className="w-full h-full stroke-current" fill="none" strokeWidth="2.5" style={{ color: ASSET_COLORS.KONTRAMAST.stroke }}>
               <path d="M2,6 L22,6 M16,2 L22,6 L16,10" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
         );
       case "kabel-existing":
         return (
-          <div className="w-6 h-0.5 bg-slate-900 rounded-full" />
+          <div
+            className="w-6 h-0.5 rounded-full"
+            style={{ backgroundColor: ASSET_COLORS.KABEL_EXISTING.stroke }}
+          />
         );
+      case "kabel-tm":
       case "kabel-rencana":
         return (
-          <div className="w-6 border-b-2 border-dashed border-red-600" />
+          // Kabel TM: Garis Merah
+          <div
+            className="w-6 h-1 rounded-full"
+            style={{ backgroundColor: ASSET_COLORS.KABEL_TM.stroke }}
+          />
+        );
+      case "kabel-tr":
+        return (
+          // Kabel TR: Garis Hijau
+          <div
+            className="w-6 h-1 rounded-full"
+            style={{ backgroundColor: ASSET_COLORS.KABEL_TR.stroke }}
+          />
         );
       default:
         return <div className="w-3 h-3 bg-slate-400 rounded-full" />;
@@ -187,7 +260,7 @@ export default function TabelLegenda({ schematic }: Props) {
   };
 
   return (
-    <div className="bg-white/95 border-2 border-slate-800 text-slate-900 shadow-md rounded-xs overflow-hidden max-w-[320px] text-[10px] select-none">
+    <div className="bg-white/95 border-2 border-slate-800 text-slate-900 shadow-md rounded-xs overflow-hidden max-w-[340px] text-[10px] select-none">
       {/* Legenda Header */}
       <div className="bg-slate-900 text-white px-2.5 py-1 font-extrabold text-[10px] uppercase tracking-wider text-center border-b border-slate-800">
         TABEL LEGENDA &amp; VOLUME
