@@ -30,6 +30,9 @@ export interface LayerInputData {
   konstruksiOverrides?: Record<number, string>;
   kondukturUkuran?: number;
   poleData?: PoleData[];
+  manualLengthM?: number;
+  boxAppCount?: number;
+  boxAppKva?: number;
 }
 
 export interface RabMapperOptions {
@@ -107,7 +110,9 @@ export function calculateRabVolumes(
 
     const defaultLayerCat: RabCategory = layer.rabCategory || (isJtrBase && !isJtmBase ? "JTR" : "JTM");
 
-    const lineLenM = calculatePolylineLengthM(layer.line && layer.line.length > 1 ? layer.line : layer.poles);
+    const lineLenM = (layer.manualLengthM !== undefined && layer.manualLengthM > 0)
+      ? layer.manualLengthM
+      : calculatePolylineLengthM(layer.line && layer.line.length > 1 ? layer.line : layer.poles);
     if (isJtmBase) totalJtmLengthM += lineLenM;
     if (isJtrBase) totalJtrLengthM += lineLenM;
 
@@ -527,6 +532,18 @@ export function calculateRabVolumes(
           }
         }
       }
+    }
+
+    // ─── 5b. BOX APP (KWH METER) ──────────────────────────────────────────────
+    if (layer.boxAppCount && layer.boxAppCount > 0) {
+      const kva = layer.boxAppKva || 197;
+      let appRow = 121; // Pemasangan Box APP Pengukuran Tidak Langsung 53 s/d 197 kVA
+      if (kva <= 41.5) appRow = 120;
+      addVolume(appRow, layer.boxAppCount, "JTR", `Pemasangan Box APP Pengukuran (${kva} kVA)`);
+
+      // Rangka Dudukan APP di Tiang
+      const rkAppRow = layerMaterial === "Beton" ? (layerHeight >= 14 ? 920 : layerHeight === 13 ? 921 : 922) : (layerHeight >= 14 ? 924 : 926);
+      addVolume(rkAppRow, layer.boxAppCount, "JTR", `Rangka Dudukan APP di Tiang`);
     }
   }
 

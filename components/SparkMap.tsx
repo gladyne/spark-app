@@ -1896,13 +1896,24 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
               </div>
             </div>
             
-            {/* Dashboard Link */}
-            <button 
-              onClick={() => window.location.href = "/dashboard"}
-              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer"
-            >
-              📁 Dashboard
-            </button>
+            <div className="flex items-center gap-1.5">
+              {/* Mode Skematik Link */}
+              <button 
+                onClick={() => window.location.href = "/schematic"}
+                className="px-2.5 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
+                title="Buka Mode Gambar Skematik (Canvas SLD & Kop PLN)"
+              >
+                📐 Skematik
+              </button>
+
+              {/* Dashboard Link */}
+              <button 
+                onClick={() => window.location.href = "/dashboard"}
+                className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+              >
+                📁 Dashboard
+              </button>
+            </div>
           </div>
 
           {/* Project Title / Save Section */}
