@@ -55,7 +55,9 @@ function updateCellInRow(rowContent: string, col: string, rowNumber: number, val
  * - 100% Preservasi Gambar/Logo: File xl/drawings/* dan xl/media/* sama sekali tidak diproses ulang,
  *   sehingga logo PLN, gambar header, dan group shapes tidak akan berubah ukuran, meregang, atau bergeser.
  * - 100% Preservasi Seluruh 15 Sheet & Formula: Modifikasi HANYA cell F{row}, G{row}, H{row} pada XML sheet "RAB Pasang".
- * - Sangat cepat, ringan, dan andal di browser.
+ * - Otomatis Full Recalculate Saat Dibuka: Mengaktifkan fullCalcOnLoad="1" pada <calcPr> tanpa mengubah
+ *   calcMode="manual" asli template PLN, dan membersihkan calcChain.xml lama agar Excel/WPS menghitung ulang
+ *   seluruh rumus (kolom I, L, M, N, dan sheet REKAP) secara presisi tanpa perlu Ctrl+Alt+F9 manual.
  */
 export async function exportRabToExcel(
   templateBuffer: ArrayBuffer | null,
@@ -72,12 +74,45 @@ export async function exportRabToExcel(
   console.log(`[exportRabToExcel] Membaca file template via JSZip (${templateBuffer.byteLength} bytes)...`);
   const zip = await JSZip.loadAsync(templateBuffer);
 
-  // ─── Baca xl/workbook.xml untuk mencari sheet "RAB Pasang" ─────────────────
+  // ─── 1. Update workbook.xml: Aktifkan fullCalcOnLoad="1" (Pertahankan calcMode="manual") ─
   const wbXml = await zip.file("xl/workbook.xml")?.async("text");
   if (!wbXml) {
     throw new Error("File yang diunggah bukan file Excel (.xlsx) yang valid (xl/workbook.xml tidak ditemukan).");
   }
 
+  let updatedWbXml = wbXml;
+  if (/<calcPr[\s>]/i.test(updatedWbXml)) {
+    updatedWbXml = updatedWbXml.replace(/<calcPr(\s+[^>]*?)?(\/?)>/i, (_match, attrs = "") => {
+      let cleanAttrs = (attrs || "").replace(/\/$/, "").trim();
+      if (/fullCalcOnLoad="[^"]*"/i.test(cleanAttrs)) {
+        cleanAttrs = cleanAttrs.replace(/fullCalcOnLoad="[^"]*"/i, 'fullCalcOnLoad="1"');
+      } else {
+        cleanAttrs = `${cleanAttrs} fullCalcOnLoad="1"`;
+      }
+      return `<calcPr ${cleanAttrs}/>`;
+    });
+  } else {
+    updatedWbXml = updatedWbXml.replace("</workbook>", '<calcPr fullCalcOnLoad="1"/></workbook>');
+  }
+  zip.file("xl/workbook.xml", updatedWbXml);
+
+  // ─── 2. Hapus stale xl/calcChain.xml & referensinya agar Excel membangun ulang urutan kalkulasi ─
+  zip.remove("xl/calcChain.xml");
+
+  let relsXml = await zip.file("xl/_rels/workbook.xml.rels")?.async("text");
+  if (relsXml) {
+    relsXml = relsXml.replace(/<Relationship[^>]*Target="calcChain\.xml"[^>]*\/>/gi, "");
+    relsXml = relsXml.replace(/<Relationship[^>]*Type="[^"]*\/calcChain"[^>]*\/>/gi, "");
+    zip.file("xl/_rels/workbook.xml.rels", relsXml);
+  }
+
+  let ctXml = await zip.file("[Content_Types].xml")?.async("text");
+  if (ctXml) {
+    ctXml = ctXml.replace(/<Override[^>]*PartName="\/xl\/calcChain\.xml"[^>]*\/>/gi, "");
+    zip.file("[Content_Types].xml", ctXml);
+  }
+
+  // ─── 3. Cari Sheet "RAB Pasang" ──────────────────────────────────────────
   const sheetRegex = /<sheet\s+[^>]*name="([^"]+)"[^>]*sheetId="([^"]+)"[^>]*r:id="([^"]+)"/gi;
   let m: RegExpExecArray | null;
   const sheetList: { name: string; sheetId: string; rId: string }[] = [];
@@ -101,8 +136,6 @@ export async function exportRabToExcel(
     );
   }
 
-  // ─── Baca xl/_rels/workbook.xml.rels untuk mendapatkan path file worksheet ─
-  const relsXml = await zip.file("xl/_rels/workbook.xml.rels")?.async("text");
   if (!relsXml) {
     throw new Error("File relasi workbook (xl/_rels/workbook.xml.rels) tidak ditemukan.");
   }
@@ -121,7 +154,7 @@ export async function exportRabToExcel(
 
   console.log(`[exportRabToExcel] Mengisi volume ke sheet "${targetSheet.name}" (${sheetPath})...`);
 
-  // ─── Kelompokkan update per baris agar efisien ────────────────────────────
+  // ─── 4. Kelompokkan update per baris agar efisien ─────────────────────────
   const updatesByRow = new Map<number, { f?: number; g?: number; h?: number }>();
   for (const item of rabSummary.items) {
     const current = updatesByRow.get(item.row) || {};
@@ -133,7 +166,7 @@ export async function exportRabToExcel(
     }
   }
 
-  // ─── Update XML baris-baris pada sheetData ─────────────────────────────────
+  // ─── 5. Update XML baris-baris pada sheetData ──────────────────────────────
   let filledCellsCount = 0;
   for (const [rowNum, vals] of updatesByRow.entries()) {
     const rowRegex = new RegExp(`(<row\\s+[^>]*r="${rowNum}"[^>]*>)([\\s\\S]*?)(<\\/row>)`);
@@ -159,7 +192,7 @@ export async function exportRabToExcel(
     compressionOptions: { level: 6 },
   });
 
-  console.log(`[exportRabToExcel] File Excel berhasil digenerate (${outBuffer.byteLength} bytes, logo & gambar 100% utuh).`);
+  console.log(`[exportRabToExcel] File Excel berhasil digenerate (${outBuffer.byteLength} bytes, fullCalcOnLoad aktif, logo & gambar 100% utuh).`);
 
   return new Blob([outBuffer as unknown as BlobPart], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
