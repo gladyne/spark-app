@@ -32,6 +32,7 @@ import LayerManager from "./sidebar/LayerManager";
 import ExecCard from "./sidebar/ExecCard";
 import RekapModal, { type LayerStat } from "./modals/RekapModal";
 import RabExportModal from "./modals/RabExportModal";
+import RabSummaryPanel from "./sidebar/RabSummaryPanel";
 import { calculateRabVolumes } from "../lib/rab/rabMapper";
 import { exportToPdf } from "../lib/exportPdf";
 
@@ -1414,7 +1415,7 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
 
   // ─── Kalkulasi RAB Otomatis (PLN UP3 Kupang KHS 2026) ─────────────────────
   const rabSummary = useMemo(() => {
-    if (!rabModalOpen) {
+    if (poles.length === 0 && savedLayers.length === 0) {
       return {
         items: [],
         warnings: [],
@@ -1424,6 +1425,14 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
         totalVolumeJtm: 0,
         totalVolumeGardu: 0,
         totalVolumeJtr: 0,
+        subtotalBahan: 0,
+        subtotalUpah: 0,
+        subtotalJtm: 0,
+        subtotalGardu: 0,
+        subtotalJtr: 0,
+        grandTotal: 0,
+        totalItemsWithPrice: 0,
+        totalItemsMissingPrice: 0,
       };
     }
 
@@ -1473,7 +1482,7 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
 
     return calculateRabVolumes(layersForRab);
   }, [
-    rabModalOpen, poles, line, jenisJaringan, statusJaringan, offsetSide, jarakGawang,
+    poles, line, jenisJaringan, statusJaringan, offsetSide, jarakGawang,
     tinggiTiang, materialTiang, kekuatanTiang, posisiTiang, konduktorJenis, rabCategory,
     gardus, effectiveSchoors, konstruksiOverrides, kondukturUkuran, poleData, savedLayers,
   ]);
@@ -2068,6 +2077,12 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
           <span className="text-base">📊</span>
           Auto-Fill RAB Excel (UP3 Kupang)
         </button>
+
+        {/* Panel Ringkasan RAB Real-Time (Estimasi Biaya) */}
+        <RabSummaryPanel
+          rabSummary={rabSummary}
+          onOpenExportModal={() => setRabModalOpen(true)}
+        />
 
         <NetworkSettings
           jenisJaringan={jenisJaringan} setJenisJaringan={setJenisJaringan}

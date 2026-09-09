@@ -23,20 +23,28 @@ export type RabCategory = "JTM" | "GARDU" | "JTR";
 export interface RabCatalogItem {
   row: number;
   section: string;
-  subsection?: string;
+  subsection?: string | null;
   description: string;
   satuan: string;
+  harga_satuan_bahan?: number | null;
+  harga_satuan_upah?: number | null;
 }
 
 export interface RabItemResult {
   row: number;
   section: string;
-  subsection?: string;
+  subsection?: string | null;
   description: string;
   satuan: string;
   volJtm: number;    // Kolom F
   volGardu: number;  // Kolom G
   volJtr: number;    // Kolom H
+  totalVolume: number; // Kolom I = F + G + H
+  hargaSatuanBahan: number | null; // Kolom J
+  hargaSatuanUpah: number | null;  // Kolom K
+  hargaBahan: number | null;       // Kolom L = I * J
+  hargaUpah: number | null;        // Kolom M = I * K
+  jumlahHarga: number | null;      // Kolom N = L + M
   details: string[];
 }
 
@@ -58,4 +66,13 @@ export interface RabSummary {
   totalVolumeJtm: number;
   totalVolumeGardu: number;
   totalVolumeJtr: number;
+  // Kalkulasi Estimasi Biaya Real-time (PLN UP3 Kupang KHS 2026)
+  subtotalBahan: number;
+  subtotalUpah: number;
+  subtotalJtm: number;
+  subtotalGardu: number;
+  subtotalJtr: number;
+  grandTotal: number;
+  totalItemsWithPrice: number;
+  totalItemsMissingPrice: number;
 }

@@ -569,24 +569,70 @@ export function calculateRabVolumes(
   let totalVolumeGardu = 0;
   let totalVolumeJtr = 0;
 
+  let subtotalBahan = 0;
+  let subtotalUpah = 0;
+  let subtotalJtm = 0;
+  let subtotalGardu = 0;
+  let subtotalJtr = 0;
+  let grandTotal = 0;
+  let totalItemsWithPrice = 0;
+  let totalItemsMissingPrice = 0;
+
   const sortedRows = Array.from(rowVolumes.keys()).sort((a, b) => a - b);
   for (const row of sortedRows) {
     const catItem = RAB_CATALOG_BY_ROW.get(row)!;
     const vol = rowVolumes.get(row)!;
+    const totalVolume = Number((vol.volJtm + vol.volGardu + vol.volJtr).toFixed(3));
 
     if (vol.volJtm > 0) { totalJtmItems++; totalVolumeJtm += vol.volJtm; }
     if (vol.volGardu > 0) { totalGarduItems++; totalVolumeGardu += vol.volGardu; }
     if (vol.volJtr > 0) { totalJtrItems++; totalVolumeJtr += vol.volJtr; }
 
+    const hsBahan = catItem.harga_satuan_bahan !== undefined ? catItem.harga_satuan_bahan : null;
+    const hsUpah = catItem.harga_satuan_upah !== undefined ? catItem.harga_satuan_upah : null;
+
+    let hargaBahan: number | null = null;
+    let hargaUpah: number | null = null;
+    let jumlahHarga: number | null = null;
+
+    if (hsBahan === null && hsUpah === null) {
+      // Dua-duanya null -> harga belum tersedia
+      totalItemsMissingPrice++;
+    } else {
+      totalItemsWithPrice++;
+      if (hsBahan !== null) {
+        hargaBahan = totalVolume * hsBahan;
+        subtotalBahan += hargaBahan;
+      }
+      if (hsUpah !== null) {
+        hargaUpah = totalVolume * hsUpah;
+        subtotalUpah += hargaUpah;
+      }
+      jumlahHarga = (hargaBahan || 0) + (hargaUpah || 0);
+      grandTotal += jumlahHarga;
+
+      // Alokasi biaya per kategori (JTM / Gardu / JTR) sesuai formula Excel:
+      const unitRate = (hsBahan || 0) + (hsUpah || 0);
+      if (vol.volJtm > 0) subtotalJtm += vol.volJtm * unitRate;
+      if (vol.volGardu > 0) subtotalGardu += vol.volGardu * unitRate;
+      if (vol.volJtr > 0) subtotalJtr += vol.volJtr * unitRate;
+    }
+
     items.push({
       row,
       section: catItem.section,
-      subsection: catItem.subsection,
+      subsection: catItem.subsection || null,
       description: catItem.description,
       satuan: catItem.satuan,
       volJtm: vol.volJtm,
       volGardu: vol.volGardu,
       volJtr: vol.volJtr,
+      totalVolume,
+      hargaSatuanBahan: hsBahan,
+      hargaSatuanUpah: hsUpah,
+      hargaBahan,
+      hargaUpah,
+      jumlahHarga,
       details: vol.details,
     });
   }
@@ -600,5 +646,13 @@ export function calculateRabVolumes(
     totalVolumeJtm,
     totalVolumeGardu,
     totalVolumeJtr,
+    subtotalBahan,
+    subtotalUpah,
+    subtotalJtm,
+    subtotalGardu,
+    subtotalJtr,
+    grandTotal,
+    totalItemsWithPrice,
+    totalItemsMissingPrice,
   };
 }
