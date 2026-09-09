@@ -83,9 +83,25 @@ export default function DashboardPage() {
     <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #0f172a, #1e293b)", fontFamily: "var(--font-geist-sans), system-ui, sans-serif", color: "#e2e8f0" }}>
       {/* Header */}
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 32px", borderBottom: "1px solid rgba(148,163,184,0.1)", background: "rgba(15,23,42,0.5)", backdropFilter: "blur(12px)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 36, height: 36, background: "linear-gradient(135deg, #3b82f6, #eab308)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>⚡</div>
-          <span style={{ fontSize: 20, fontWeight: 800, background: "linear-gradient(135deg, #93c5fd, #fde68a)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>SPARK</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }} onClick={() => router.push("/")}>
+            <div style={{ width: 36, height: 36, background: "linear-gradient(135deg, #3b82f6, #eab308)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>⚡</div>
+            <span style={{ fontSize: 20, fontWeight: 800, background: "linear-gradient(135deg, #93c5fd, #fde68a)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>SPARK</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 8 }}>
+            <button
+              onClick={() => router.push("/")}
+              style={{ padding: "6px 12px", background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.3)", borderRadius: 8, color: "#93c5fd", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+            >
+              🗺️ Peta GIS
+            </button>
+            <button
+              onClick={() => router.push("/schematic")}
+              style={{ padding: "6px 12px", background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.4)", borderRadius: 8, color: "#fde68a", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+            >
+              📐 Mode Skematik
+            </button>
+          </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <span style={{ fontSize: 13, color: "#94a3b8" }}>👤 {session?.user?.name}</span>
@@ -100,7 +116,23 @@ export default function DashboardPage() {
             <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0, marginBottom: 4 }}>Project Saya</h1>
             <p style={{ fontSize: 14, color: "#94a3b8", margin: 0 }}>{projects.length} project</p>
           </div>
-          <button onClick={() => setShowNew(true)} style={{ padding: "12px 24px", background: "linear-gradient(135deg, #3b82f6, #2563eb)", border: "none", borderRadius: 10, color: "white", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>+ Project Baru</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button
+              onClick={() => router.push("/schematic")}
+              style={{ padding: "12px 20px", background: "linear-gradient(135deg, #d97706, #b45309)", border: "1px solid rgba(245,158,11,0.4)", borderRadius: 10, color: "#fef3c7", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, boxShadow: "0 4px 12px rgba(217,119,6,0.25)" }}
+              title="Buka Kanvas Gambar Bebas Single Line Diagram & Kop PLN"
+            >
+              <span>📐</span>
+              <span>Gambar Skematik (SLD)</span>
+            </button>
+            <button
+              onClick={() => setShowNew(true)}
+              style={{ padding: "12px 24px", background: "linear-gradient(135deg, #3b82f6, #2563eb)", border: "none", borderRadius: 10, color: "white", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+            >
+              <span>+</span>
+              <span>Project Baru (Peta)</span>
+            </button>
+          </div>
         </div>
 
         {/* New Project Form */}
@@ -114,7 +146,8 @@ export default function DashboardPage() {
               <input style={inputStyle} placeholder="Deskripsi (opsional)" value={newDesc} onChange={e => setNewDesc(e.target.value)} />
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={handleCreate} disabled={creating || !newName.trim()} style={{ padding: "10px 20px", background: "#3b82f6", border: "none", borderRadius: 8, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: creating || !newName.trim() ? 0.5 : 1 }}>{creating ? "Membuat..." : "Buat"}</button>
+              <button onClick={handleCreate} disabled={creating || !newName.trim()} style={{ padding: "10px 20px", background: "#3b82f6", border: "none", borderRadius: 8, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: creating || !newName.trim() ? 0.5 : 1 }}>{creating ? "Membuat..." : "Buka di Peta GIS"}</button>
+              <button onClick={() => router.push("/schematic")} style={{ padding: "10px 20px", background: "rgba(245,158,11,0.2)", border: "1px solid rgba(245,158,11,0.4)", borderRadius: 8, color: "#fde68a", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📐 Buka di Skematik</button>
               <button onClick={() => { setShowNew(false); setNewName(""); setNewDesc(""); }} style={{ padding: "10px 20px", background: "rgba(148,163,184,0.1)", border: "1px solid rgba(148,163,184,0.2)", borderRadius: 8, color: "#94a3b8", fontSize: 13, cursor: "pointer" }}>Batal</button>
             </div>
           </div>
