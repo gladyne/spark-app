@@ -58,6 +58,7 @@ const PRESET_ELEVATE_197KVA: SchematicData = {
       materialTiang: "Beton",
       posisiTiang: "Ujung",
       konstruksi: "C1",
+      schoor: { jenis: "Treck", tipe: "Standar", rotation: 270 },
     },
     {
       id: "node_p2",

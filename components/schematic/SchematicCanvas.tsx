@@ -2,7 +2,14 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import type { SchematicData, SchematicNode, SchematicEdge, SchematicNodeType, SchematicEdgeType } from "../../types/schematic";
-import { ASSET_COLORS, getCableStyle, getPoleStyle } from "../../lib/assetStyles";
+import {
+  SPARK_ASSET_COLORS,
+  renderPoleSvg,
+  renderGarduSvg,
+  renderSchoorSvg,
+  renderBoxAppSvg,
+  getCableStyle,
+} from "../../lib/assetStyles";
 
 interface Props {
   schematic: SchematicData;
@@ -13,20 +20,27 @@ interface Props {
 type ActiveTool =
   | "select"
   | "tiang-tm"
-  | "tiang-tr"
+  | "tiang-baja"
   | "tiang-existing"
-  | "gardu"
-  | "box-app"
+  | "gardu-portal"
+  | "gardu-cantol"
+  | "treck-schoor"
+  | "druck-schoor"
   | "kontramast"
-  | "kabel-tm"
-  | "kabel-tr"
+  | "box-app"
+  | "kabel-sutm"
+  | "kabel-skutr"
   | "kabel-existing"
   // Legacy aliases
   | "tiang-rencana"
-  | "kabel-rencana";
+  | "tiang-tr"
+  | "gardu"
+  | "kabel-rencana"
+  | "kabel-tm"
+  | "kabel-tr";
 
 export default function SchematicCanvas({ schematic, onChange, isPrinting = false }: Props) {
-  const { nodes, edges, kop } = schematic;
+  const { nodes, edges } = schematic;
 
   const [activeTool, setActiveTool] = useState<ActiveTool>("select");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -38,7 +52,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [dragStartSnapshot, setDragStartSnapshot] = useState<{ id: string; x: number; y: number } | null>(null);
 
-  // Undo / Redo History Stack (in-memory, maks 50 langkah)
+  // In-memory Undo / Redo History Stack (maks 50 langkah)
   const [past, setPast] = useState<SchematicData[]>([]);
   const [future, setFuture] = useState<SchematicData[]>([]);
 
@@ -168,12 +182,15 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
     }
 
     // Jika tool adalah kabel, klik pada kanvas kosong membatalkan penarikan kabel
-    if (
+    const isCableTool =
+      activeTool === "kabel-sutm" ||
+      activeTool === "kabel-skutr" ||
+      activeTool === "kabel-existing" ||
       activeTool === "kabel-tm" ||
       activeTool === "kabel-tr" ||
-      activeTool === "kabel-rencana" ||
-      activeTool === "kabel-existing"
-    ) {
+      activeTool === "kabel-rencana";
+
+    if (isCableTool) {
       setCableStartNodeId(null);
       return;
     }
@@ -201,20 +218,20 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
         posisiTiang: "Tumpu",
         konstruksi: "C1",
       };
-    } else if (activeTool === "tiang-tr") {
-      const idx = nodes.filter(n => n.type === "tiang-tr").length + 1;
+    } else if (activeTool === "tiang-baja") {
+      const idx = nodes.filter(n => n.materialTiang === "Baja").length + 1;
       newNode = {
         id: newNodeId,
-        type: "tiang-tr",
-        kategori: "TR",
+        type: "tiang-tm",
+        kategori: "TM",
         x: snappedX,
         y: snappedY,
-        label: `TR.${idx}`,
-        materialTiang: "Beton",
-        tinggiTiang: 9,
+        label: `TB.${idx}`,
+        materialTiang: "Baja",
+        tinggiTiang: 12,
         kekuatanTiang: 200,
         posisiTiang: "Tumpu",
-        konstruksi: "S1",
+        konstruksi: "C1",
       };
     } else if (activeTool === "tiang-existing") {
       const idx = nodes.filter(n => n.type === "tiang-existing").length + 1;
@@ -229,25 +246,45 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
         kekuatanTiang: 200,
         posisiTiang: "Tumpu",
       };
-    } else if (activeTool === "gardu") {
+    } else if (activeTool === "gardu-portal" || activeTool === "gardu") {
       newNode = {
         id: newNodeId,
         type: "gardu",
         x: snappedX,
         y: snappedY,
-        label: "Gardu 100kVA",
+        label: "Gardu Portal 100kVA",
         garduJenis: "Portal",
         trafoKva: 100,
         fasa: "3 phs",
       };
-    } else if (activeTool === "box-app") {
+    } else if (activeTool === "gardu-cantol") {
       newNode = {
         id: newNodeId,
-        type: "box-app",
+        type: "gardu",
         x: snappedX,
         y: snappedY,
-        label: "APP 197kVA",
-        boxKva: 197,
+        label: "Gardu Cantol 50kVA",
+        garduJenis: "Cantol",
+        trafoKva: 50,
+        fasa: "3 phs",
+      };
+    } else if (activeTool === "treck-schoor") {
+      newNode = {
+        id: newNodeId,
+        type: "treck-schoor",
+        x: snappedX,
+        y: snappedY,
+        label: "Treck Schoor",
+        schoor: { jenis: "Treck", tipe: "Standar", rotation: 0 },
+      };
+    } else if (activeTool === "druck-schoor") {
+      newNode = {
+        id: newNodeId,
+        type: "druck-schoor",
+        x: snappedX,
+        y: snappedY,
+        label: "Druck Schoor",
+        schoor: { jenis: "Druck", rotation: 0 },
       };
     } else if (activeTool === "kontramast") {
       newNode = {
@@ -257,6 +294,16 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
         y: snappedY,
         label: "KM-01",
         kontramastTipe: "Standar",
+        schoor: { jenis: "Kontramast", rotation: 0 },
+      };
+    } else if (activeTool === "box-app") {
+      newNode = {
+        id: newNodeId,
+        type: "box-app",
+        x: snappedX,
+        y: snappedY,
+        label: "APP 197kVA",
+        boxKva: 197,
       };
     } else {
       return;
@@ -274,14 +321,16 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
     e.stopPropagation();
 
     const isCableTool =
+      activeTool === "kabel-sutm" ||
+      activeTool === "kabel-skutr" ||
+      activeTool === "kabel-existing" ||
       activeTool === "kabel-tm" ||
       activeTool === "kabel-tr" ||
-      activeTool === "kabel-rencana" ||
-      activeTool === "kabel-existing";
+      activeTool === "kabel-rencana";
 
     if (isCableTool) {
       if (!cableStartNodeId) {
-        // Klik node awal
+        // Klik node asal
         setCableStartNodeId(node.id);
       } else {
         // Klik node tujuan
@@ -290,12 +339,11 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
           return;
         }
 
-        // Hitung jarak perkiraan piksel untuk rekomendasi
         const startNode = nodes.find(n => n.id === cableStartNodeId);
         const distPx = startNode ? Math.hypot(node.x - startNode.x, node.y - startNode.y) : 100;
         const recommendedM = Math.max(10, Math.round(distPx * 0.5));
 
-        const isTR = activeTool === "kabel-tr";
+        const isTR = activeTool === "kabel-skutr" || activeTool === "kabel-tr";
         const isExist = activeTool === "kabel-existing";
 
         const newEdgeId = `edge_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -361,7 +409,6 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
     if (draggingNodeId && dragStartSnapshot) {
       const currentNode = nodes.find(n => n.id === draggingNodeId);
       if (currentNode && (currentNode.x !== dragStartSnapshot.x || currentNode.y !== dragStartSnapshot.y)) {
-        // Simpan snapshot lama ke history past
         const previousSchematic: SchematicData = {
           ...schematic,
           nodes: nodes.map(n => n.id === dragStartSnapshot.id ? { ...n, x: dragStartSnapshot.x, y: dragStartSnapshot.y } : n),
@@ -437,7 +484,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
 
             <div className="h-5 w-px bg-slate-700 mx-1" />
 
-            {/* Simbol Tiang TM (Titik Hitam Core Kuning) */}
+            {/* Simbol Tiang Beton (Kuning Lingkaran Hitam - Persis SparkMap.tsx) */}
             <button
               onClick={() => setActiveTool("tiang-tm")}
               className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
@@ -445,33 +492,29 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                   ? "bg-amber-600 text-white shadow-sm ring-2 ring-amber-400/50"
                   : "bg-slate-800 text-slate-300 hover:bg-slate-700"
               }`}
-              title="Tiang TM 20kV (Titik Hitam dengan Core Kuning)"
+              title="Tiang Beton (Lingkaran Kuning Border Hitam)"
             >
-              <div
-                className="w-3.5 h-3.5 rounded-full flex items-center justify-center"
-                style={{ backgroundColor: ASSET_COLORS.TIANG_TM.core, border: `2px solid ${ASSET_COLORS.TIANG_TM.color}` }}
-              />
-              <span>Tiang TM</span>
+              <div className="w-3.5 h-3.5 rounded-full bg-[#ffeb3b] border-2 border-black" />
+              <span>Tiang Beton</span>
             </button>
 
-            {/* Simbol Tiang TR (Titik Putih Border Biru) */}
+            {/* Simbol Tiang Baja (Double-ring) */}
             <button
-              onClick={() => setActiveTool("tiang-tr")}
+              onClick={() => setActiveTool("tiang-baja")}
               className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                activeTool === "tiang-tr"
-                  ? "bg-sky-700 text-white shadow-sm ring-2 ring-sky-400/50"
+                activeTool === "tiang-baja"
+                  ? "bg-amber-700 text-white shadow-sm ring-2 ring-amber-400/50"
                   : "bg-slate-800 text-slate-300 hover:bg-slate-700"
               }`}
-              title="Tiang TR 380V (Titik Putih dengan Border Biru)"
+              title="Tiang Baja (Double-ring Konsentris)"
             >
-              <div
-                className="w-3.5 h-3.5 rounded-full"
-                style={{ backgroundColor: ASSET_COLORS.TIANG_TR.core, border: `2px solid ${ASSET_COLORS.TIANG_TR.color}` }}
-              />
-              <span>Tiang TR</span>
+              <div className="w-3.5 h-3.5 rounded-full bg-[#ffeb3b] border-2 border-black flex items-center justify-center">
+                <div className="w-1.5 h-1.5 rounded-full border border-black" />
+              </div>
+              <span>Tiang Baja</span>
             </button>
 
-            {/* Simbol Tiang Exist (Titik Solid Gelap) */}
+            {/* Simbol Tiang Exist (Hitam solid border putih) */}
             <button
               onClick={() => setActiveTool("tiang-existing")}
               className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
@@ -479,97 +522,158 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                   ? "bg-slate-700 text-white border border-slate-500 shadow-sm"
                   : "bg-slate-800 text-slate-300 hover:bg-slate-700"
               }`}
-              title="Tiang Existing (Titik Solid Gelap)"
+              title="Tiang Existing (Hitam Border Putih)"
             >
-              <div
-                className="w-3.5 h-3.5 rounded-full"
-                style={{ backgroundColor: ASSET_COLORS.TIANG_EXISTING.color }}
-              />
+              <div className="w-3.5 h-3.5 rounded-full bg-black border border-white" />
               <span>Tiang Exist</span>
             </button>
 
-            {/* Simbol Gardu (Kotak/Segitiga Ungu) */}
+            <div className="h-5 w-px bg-slate-700 mx-1" />
+
+            {/* Gardu Portal (2 Tiang + Trafo Segitiga Ungu) */}
             <button
-              onClick={() => setActiveTool("gardu")}
+              onClick={() => setActiveTool("gardu-portal")}
               className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                activeTool === "gardu"
+                activeTool === "gardu-portal"
                   ? "bg-purple-700 text-white shadow-sm ring-2 ring-purple-400/50"
                   : "bg-slate-800 text-slate-300 hover:bg-slate-700"
               }`}
-              title="Gardu Trafo Distribusi Portal/Cantol (Kotak/Segitiga Ungu)"
+              title="Gardu Portal (2 Tiang Trafo Ungu - Persis SparkMap.tsx)"
             >
-              <div
-                className="w-4 h-4 rounded-xs flex items-center justify-center"
-                style={{ backgroundColor: ASSET_COLORS.GARDU.bg, border: `1.5px solid ${ASSET_COLORS.GARDU.border}` }}
-              >
-                <svg width="10" height="10" viewBox="0 0 24 24">
-                  <polygon points="12,2 2,22 22,22" fill={ASSET_COLORS.GARDU.fill} stroke={ASSET_COLORS.GARDU.primary} strokeWidth="3" />
+              <div className="w-4 h-4 flex items-center justify-center">
+                <svg width="14" height="14" viewBox="-14 -20 28 28">
+                  <circle cx="-6" cy="0" r="4" fill="white" stroke="#000" strokeWidth="1.5" />
+                  <circle cx="6" cy="0" r="4" fill="white" stroke="#000" strokeWidth="1.5" />
+                  <polygon points="0,-16 10,-4 -10,-4" fill={SPARK_ASSET_COLORS.GARDU.fill} stroke={SPARK_ASSET_COLORS.GARDU.stroke} strokeWidth="2" strokeLinejoin="round" />
                 </svg>
               </div>
-              <span>Gardu</span>
+              <span>Gardu Portal</span>
             </button>
 
-            {/* Simbol Box APP */}
+            {/* Gardu Cantol (1 Tiang + Trafo Segitiga Ungu) */}
+            <button
+              onClick={() => setActiveTool("gardu-cantol")}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                activeTool === "gardu-cantol"
+                  ? "bg-purple-700 text-white shadow-sm ring-2 ring-purple-400/50"
+                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+              }`}
+              title="Gardu Cantol (1 Tiang Trafo Ungu)"
+            >
+              <div className="w-4 h-4 flex items-center justify-center">
+                <svg width="12" height="14" viewBox="-10 -20 20 28">
+                  <circle cx="0" cy="0" r="4" fill="white" stroke="#000" strokeWidth="1.5" />
+                  <polygon points="0,-16 7,-4 -7,-4" fill={SPARK_ASSET_COLORS.GARDU.fill} stroke={SPARK_ASSET_COLORS.GARDU.stroke} strokeWidth="2" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <span>Gardu Cantol</span>
+            </button>
+
+            <div className="h-5 w-px bg-slate-700 mx-1" />
+
+            {/* Treckschoor Standar */}
+            <button
+              onClick={() => setActiveTool("treck-schoor")}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                activeTool === "treck-schoor"
+                  ? "bg-red-700 text-white shadow-sm ring-2 ring-red-400/50"
+                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+              }`}
+              title="Treckschoor (Panah Merah Tarik Keluar - svgUtils.ts)"
+            >
+              <div className="w-3.5 h-3.5 flex items-center justify-center">
+                <svg width="12" height="12" viewBox="-25 -25 50 50">
+                  <line x1="0" y1="6" x2="0" y2="-20" stroke={SPARK_ASSET_COLORS.SCHOOR.treck} strokeWidth="3.5" strokeLinecap="round" />
+                  <polygon points="-5,-12 0,-20 5,-12" fill={SPARK_ASSET_COLORS.SCHOOR.treck} />
+                </svg>
+              </div>
+              <span>Treck</span>
+            </button>
+
+            {/* Drukschoor */}
+            <button
+              onClick={() => setActiveTool("druck-schoor")}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                activeTool === "druck-schoor"
+                  ? "bg-blue-700 text-white shadow-sm ring-2 ring-blue-400/50"
+                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+              }`}
+              title="Drukschoor (Panah Biru Dorong ke Dalam - svgUtils.ts)"
+            >
+              <div className="w-3.5 h-3.5 flex items-center justify-center">
+                <svg width="12" height="12" viewBox="-25 -25 50 50">
+                  <line x1="0" y1="-20" x2="0" y2="-4" stroke={SPARK_ASSET_COLORS.SCHOOR.druck} strokeWidth="3.5" strokeLinecap="round" />
+                  <polygon points="-5,-12 0,-4 5,-12" fill={SPARK_ASSET_COLORS.SCHOOR.druck} />
+                </svg>
+              </div>
+              <span>Druck</span>
+            </button>
+
+            {/* Kontramast */}
+            <button
+              onClick={() => setActiveTool("kontramast")}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                activeTool === "kontramast"
+                  ? "bg-emerald-700 text-white shadow-sm ring-2 ring-emerald-400/50"
+                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+              }`}
+              title="Kontramast (Tiang Jangkar Seberang - svgUtils.ts)"
+            >
+              <div className="w-3.5 h-3.5 flex items-center justify-center">
+                <svg width="12" height="12" viewBox="-15 -35 30 50">
+                  <line x1="0" y1="-4" x2="0" y2="-18" stroke={SPARK_ASSET_COLORS.SCHOOR.kontramast} strokeWidth="2" strokeDasharray="3 2" />
+                  <circle cx="0" cy="-21" r="4" fill="white" stroke={SPARK_ASSET_COLORS.SCHOOR.kontramast} strokeWidth="2.5" />
+                  <line x1="0" y1="-25" x2="0" y2="-34" stroke={SPARK_ASSET_COLORS.SCHOOR.kontramast} strokeWidth="2.5" />
+                  <polygon points="-4,-28 0,-34 4,-28" fill={SPARK_ASSET_COLORS.SCHOOR.kontramast} />
+                </svg>
+              </div>
+              <span>Kontramast</span>
+            </button>
+
+            {/* Box APP */}
             <button
               onClick={() => setActiveTool("box-app")}
               className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
                 activeTool === "box-app"
-                  ? "bg-orange-700 text-white shadow-sm ring-2 ring-orange-400/50"
+                  ? "bg-indigo-700 text-white shadow-sm ring-2 ring-indigo-400/50"
                   : "bg-slate-800 text-slate-300 hover:bg-slate-700"
               }`}
-              title="Box APP kWh Meter"
+              title="Box APP kWh Meter PLN"
             >
-              <div
-                className="w-3.5 h-3.5 rounded-xs flex items-center justify-center text-[7px] font-black"
-                style={{ backgroundColor: ASSET_COLORS.BOX_APP.bg, border: `1.5px solid ${ASSET_COLORS.BOX_APP.border}`, color: ASSET_COLORS.BOX_APP.text }}
-              >
+              <div className="w-3.5 h-3.5 bg-blue-100 border border-blue-600 rounded-xs flex items-center justify-center text-[7px] font-black text-blue-900">
                 A
               </div>
               <span>Box APP</span>
             </button>
 
-            {/* Simbol Kontramast */}
-            <button
-              onClick={() => setActiveTool("kontramast")}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                activeTool === "kontramast"
-                  ? "bg-slate-700 text-white shadow-sm"
-                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-              }`}
-              title="Kontramast / Schoor"
-            >
-              <span style={{ color: ASSET_COLORS.KONTRAMAST.primary, fontWeight: 900 }}>⇗</span>
-              <span>Schoor</span>
-            </button>
-
             <div className="h-5 w-px bg-slate-700 mx-1" />
 
-            {/* Kabel TM (Garis Merah) */}
+            {/* Kabel SUTM */}
             <button
-              onClick={() => { setActiveTool("kabel-tm"); setCableStartNodeId(null); }}
+              onClick={() => { setActiveTool("kabel-sutm"); setCableStartNodeId(null); }}
               className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                activeTool === "kabel-tm"
-                  ? "bg-red-700 text-white shadow-sm ring-2 ring-red-400/50"
+                activeTool === "kabel-sutm"
+                  ? "bg-blue-700 text-white shadow-sm ring-2 ring-blue-400/50"
                   : "bg-slate-800 text-slate-300 hover:bg-slate-700"
               }`}
-              title="Kabel TM (SUTM/SKUTM 20kV - Garis Merah)"
+              title="Kabel SUTM (Biru Solid)"
             >
-              <div className="w-4 h-1 rounded-full" style={{ backgroundColor: ASSET_COLORS.KABEL_TM.stroke }} />
-              <span>Kabel TM</span>
+              <div className="w-4 h-1 bg-blue-500 rounded-full" />
+              <span>SUTM</span>
             </button>
 
-            {/* Kabel TR (Garis Hijau) */}
+            {/* Kabel SKUTR */}
             <button
-              onClick={() => { setActiveTool("kabel-tr"); setCableStartNodeId(null); }}
+              onClick={() => { setActiveTool("kabel-skutr"); setCableStartNodeId(null); }}
               className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                activeTool === "kabel-tr"
+                activeTool === "kabel-skutr"
                   ? "bg-emerald-700 text-white shadow-sm ring-2 ring-emerald-400/50"
                   : "bg-slate-800 text-slate-300 hover:bg-slate-700"
               }`}
-              title="Kabel TR (SKUTR/SUTR 380V - Garis Hijau)"
+              title="Kabel SKUTR (Hijau Dashed)"
             >
-              <div className="w-4 h-1 rounded-full" style={{ backgroundColor: ASSET_COLORS.KABEL_TR.stroke }} />
-              <span>Kabel TR</span>
+              <div className="w-4 border-b-2 border-dashed border-green-400" />
+              <span>SKUTR</span>
             </button>
 
             {/* Kabel Exist */}
@@ -580,10 +684,10 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                   ? "bg-slate-700 text-white shadow-sm"
                   : "bg-slate-800 text-slate-300 hover:bg-slate-700"
               }`}
-              title="Kabel Existing (Garis Abu-abu)"
+              title="Kabel Existing (Hitam Dashed)"
             >
-              <div className="w-4 h-0.5 bg-slate-400 rounded-full" />
-              <span>Kabel Exist</span>
+              <div className="w-4 h-0.5 bg-slate-300 rounded-full" />
+              <span>Exist</span>
             </button>
           </div>
 
@@ -699,19 +803,6 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
               <pattern id="grid-pattern" width={GRID_SIZE} height={GRID_SIZE} patternUnits="userSpaceOnUse">
                 <circle cx={GRID_SIZE} cy={GRID_SIZE} r="1" fill="#E2E8F0" />
               </pattern>
-
-              {/* Marker panah kontramast */}
-              <marker
-                id="arrow-kontramast"
-                viewBox="0 0 10 10"
-                refX="6"
-                refY="5"
-                markerWidth="6"
-                markerHeight="6"
-                orient="auto-start-reverse"
-              >
-                <path d="M 0 0 L 10 5 L 0 10 z" fill={ASSET_COLORS.KONTRAMAST.stroke} />
-              </marker>
             </defs>
 
             {/* Transform Layer for Zoom & Pan */}
@@ -735,17 +826,12 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                 if (!fromNode || !toNode) return null;
 
                 const isSelected = selectedEdgeId === edge.id;
-                const isTR = edge.type === "kabel-tr" || (edge.jenisJaringan && (edge.jenisJaringan.includes("TR") || edge.jenisJaringan.includes("SKUTR")));
                 const isExist = edge.type === "kabel-existing";
+                const cableStyle = getCableStyle(edge.jenisJaringan || "SUTM", isExist);
 
-                // Warna kabel konsisten FieldMap.tsx: Merah untuk TM, Hijau untuk TR
-                const strokeColor = isSelected
-                  ? ASSET_COLORS.SELECTED.stroke
-                  : isExist
-                  ? ASSET_COLORS.KABEL_EXISTING.stroke
-                  : isTR
-                  ? ASSET_COLORS.KABEL_TR.stroke
-                  : ASSET_COLORS.KABEL_TM.stroke;
+                const strokeColor = isSelected ? SPARK_ASSET_COLORS.POLE.selectedHalo : cableStyle.stroke;
+                const strokeWidth = isSelected ? 4.5 : cableStyle.strokeWidth;
+                const strokeDasharray = cableStyle.strokeDasharray;
 
                 const midX = (fromNode.x + toNode.x) / 2;
                 const midY = (fromNode.y + toNode.y) / 2;
@@ -760,7 +846,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                     }}
                     className="cursor-pointer group"
                   >
-                    {/* Invisible thick line for easy selection target */}
+                    {/* Invisible line for easier tap target */}
                     <line
                       x1={fromNode.x}
                       y1={fromNode.y}
@@ -777,8 +863,8 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                       x2={toNode.x}
                       y2={toNode.y}
                       stroke={strokeColor}
-                      strokeWidth={isSelected ? 4 : isExist ? 2 : 2.8}
-                      strokeDasharray={isExist ? ASSET_COLORS.KABEL_EXISTING.dashArray : undefined}
+                      strokeWidth={strokeWidth}
+                      strokeDasharray={strokeDasharray}
                       strokeLinecap="round"
                     />
 
@@ -791,7 +877,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                         height={16}
                         rx={4}
                         fill="white"
-                        stroke={isSelected ? ASSET_COLORS.SELECTED.stroke : "#CBD5E1"}
+                        stroke={isSelected ? SPARK_ASSET_COLORS.POLE.selectedHalo : "#CBD5E1"}
                         strokeWidth={isSelected ? 1.5 : 1}
                         className="shadow-xs"
                       />
@@ -808,13 +894,16 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                 );
               })}
 
-              {/* ─── Render Nodes (Simbol Konsisten FieldMap.tsx) ─── */}
+              {/* ─── Render Nodes (Simbol Persis SparkMap.tsx & svgUtils.ts) ─── */}
               {nodes.map(node => {
                 const isSelected = selectedNodeId === node.id;
                 const isCableStart = cableStartNodeId === node.id;
 
-                const isTM = node.type === "tiang-tm" || (node.type === "tiang-rencana" && node.kategori !== "TR");
-                const isTR = node.type === "tiang-tr" || (node.kategori === "TR");
+                const isPole =
+                  node.type === "tiang-tm" ||
+                  node.type === "tiang-tr" ||
+                  node.type === "tiang-rencana" ||
+                  node.type === "tiang-existing";
 
                 return (
                   <g
@@ -828,122 +917,74 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                     {(isSelected || isCableStart) && (
                       <circle
                         r={20}
-                        fill={isCableStart ? "rgba(239, 68, 68, 0.25)" : ASSET_COLORS.SELECTED.halo}
-                        stroke={isCableStart ? "#EF4444" : ASSET_COLORS.SELECTED.stroke}
+                        fill={isCableStart ? "rgba(239, 68, 68, 0.25)" : "rgba(249, 115, 22, 0.25)"}
+                        stroke={isCableStart ? "#EF4444" : SPARK_ASSET_COLORS.POLE.selectedHalo}
                         strokeWidth={2}
                         strokeDasharray="4,2"
                       />
                     )}
 
-                    {/* 1. Tiang TM: Titik hitam dengan core kuning (PERSIS FieldMap.tsx) */}
-                    {isTM && (
-                      <g>
-                        <circle
-                          r={9}
-                          fill={ASSET_COLORS.TIANG_TM.core}
-                          stroke={ASSET_COLORS.TIANG_TM.color}
-                          strokeWidth={3}
-                        />
-                        <circle r={2.5} fill={ASSET_COLORS.TIANG_TM.color} />
-                      </g>
+                    {/* Render Schoor jika terpasang pada tiang ini */}
+                    {node.schoor && (
+                      renderSchoorSvg({
+                        jenis: node.schoor.jenis,
+                        tipe: node.schoor.tipe,
+                        rot: node.schoor.rotation || 0,
+                        poleSize: 17,
+                      })
                     )}
 
-                    {/* 2. Tiang TR: Titik putih dengan border biru (PERSIS FieldMap.tsx) */}
-                    {isTR && (
-                      <g>
-                        <circle
-                          r={8.5}
-                          fill={ASSET_COLORS.TIANG_TR.core}
-                          stroke={ASSET_COLORS.TIANG_TR.color}
-                          strokeWidth={3}
-                        />
-                      </g>
+                    {/* 1. Tiang (Beton vs Baja / Existing) */}
+                    {isPole && (
+                      renderPoleSvg({
+                        material: node.materialTiang || "Beton",
+                        isExisting: node.type === "tiang-existing",
+                        isSelected,
+                        size: 17,
+                      })
                     )}
 
-                    {/* 3. Tiang Existing: Titik solid gelap */}
-                    {node.type === "tiang-existing" && (
-                      <circle
-                        r={8.5}
-                        fill={ASSET_COLORS.TIANG_EXISTING.color}
-                        stroke="#475569"
-                        strokeWidth={2}
-                      />
-                    )}
-
-                    {/* 4. Gardu: Kotak/Segitiga Ungu (PERSIS FieldMap.tsx) */}
+                    {/* 2. Gardu Distribusi (Cantol / Portal) */}
                     {node.type === "gardu" && (
-                      <g>
-                        {/* Kotak latar ungu muda */}
-                        <rect
-                          x={-14}
-                          y={-14}
-                          width={28}
-                          height={28}
-                          fill={ASSET_COLORS.GARDU.bg}
-                          stroke={ASSET_COLORS.GARDU.border}
-                          strokeWidth={2.5}
-                          rx={4}
-                        />
-                        {/* Segitiga simbol trafo */}
-                        <polygon
-                          points="0,-7 -8,6 8,6"
-                          fill={ASSET_COLORS.GARDU.fill}
-                          stroke={ASSET_COLORS.GARDU.border}
-                          strokeWidth={2}
-                          strokeLinejoin="round"
-                        />
-                        <text
-                          x={0}
-                          y={11.5}
-                          textAnchor="middle"
-                          className="text-[6.5px] font-black"
-                          fill={ASSET_COLORS.GARDU.text}
-                        >
-                          {node.trafoKva || 100}kVA
-                        </text>
-                      </g>
+                      renderGarduSvg({
+                        jenis: node.garduJenis || "Portal",
+                        trafoKva: node.trafoKva || 100,
+                        poleSize: 17,
+                      })
                     )}
 
-                    {/* 5. Box APP (kWh Meter): Kotak oranye */}
-                    {node.type === "box-app" && (
-                      <g>
-                        <rect
-                          x={-13}
-                          y={-13}
-                          width={26}
-                          height={26}
-                          fill={ASSET_COLORS.BOX_APP.bg}
-                          stroke={ASSET_COLORS.BOX_APP.border}
-                          strokeWidth={2.5}
-                          rx={3}
-                        />
-                        <rect x={-8} y={-8} width={16} height={6} fill={ASSET_COLORS.BOX_APP.border} />
-                        <text
-                          x={0}
-                          y={8}
-                          textAnchor="middle"
-                          className="text-[7.5px] font-black"
-                          fill={ASSET_COLORS.BOX_APP.text}
-                        >
-                          APP
-                        </text>
-                      </g>
+                    {/* 3. Schoor Mandiri di Kanvas */}
+                    {node.type === "treck-schoor" && (
+                      renderSchoorSvg({
+                        jenis: "Treck",
+                        tipe: node.kontramastTipe || "Standar",
+                        rot: node.schoor?.rotation || 0,
+                        poleSize: 17,
+                      })
                     )}
 
-                    {/* 6. Kontramast / Schoor */}
+                    {node.type === "druck-schoor" && (
+                      renderSchoorSvg({
+                        jenis: "Druck",
+                        rot: node.schoor?.rotation || 0,
+                        poleSize: 17,
+                      })
+                    )}
+
                     {node.type === "kontramast" && (
-                      <g>
-                        <line
-                          x1={-12}
-                          y1={12}
-                          x2={12}
-                          y2={-12}
-                          stroke={ASSET_COLORS.KONTRAMAST.stroke}
-                          strokeWidth={3}
-                          markerEnd="url(#arrow-kontramast)"
-                        />
-                        <circle cx={-12} cy={12} r={3} fill={ASSET_COLORS.KONTRAMAST.stroke} />
-                      </g>
+                      renderSchoorSvg({
+                        jenis: "Kontramast",
+                        rot: node.schoor?.rotation || 0,
+                        poleSize: 17,
+                      })
+                    )}
+
+                    {/* 4. Box APP (kWh Meter) */}
+                    {node.type === "box-app" && (
+                      renderBoxAppSvg({
+                        boxKva: node.boxKva || 197,
+                        size: 24,
+                      })
                     )}
 
                     {/* Label Text di bawah simbol */}
@@ -980,28 +1021,9 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                   />
                 </div>
 
-                {/* Atribut Tiang (TM / TR / Existing) */}
+                {/* Atribut Tiang (Beton / Baja / Material / Tinggi / Posisi) */}
                 {(selectedNode.type.startsWith("tiang")) && (
                   <>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-slate-500 font-bold">Kategori:</span>
-                      <select
-                        value={selectedNode.type === "tiang-tr" ? "TR" : "TM"}
-                        onChange={(e) => {
-                          const kat = e.target.value as "TM" | "TR";
-                          updateSelectedNode({
-                            type: kat === "TR" ? "tiang-tr" : "tiang-tm",
-                            kategori: kat,
-                            tinggiTiang: kat === "TR" ? 9 : 12,
-                          });
-                        }}
-                        className="px-2 py-1 border border-slate-300 rounded font-semibold text-xs outline-none"
-                      >
-                        <option value="TM">Tegangan Menengah (20 kV)</option>
-                        <option value="TR">Tegangan Rendah (380 V)</option>
-                      </select>
-                    </div>
-
                     <div className="flex items-center gap-1.5">
                       <span className="text-slate-500 font-bold">Material:</span>
                       <select
@@ -1009,8 +1031,8 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                         onChange={(e) => updateSelectedNode({ materialTiang: e.target.value as any })}
                         className="px-2 py-1 border border-slate-300 rounded font-semibold text-xs outline-none"
                       >
-                        <option value="Beton">Beton</option>
-                        <option value="Baja">Baja</option>
+                        <option value="Beton">Tiang Beton (Solid Kuning)</option>
+                        <option value="Baja">Tiang Baja (Double Ring)</option>
                       </select>
                     </div>
 
@@ -1043,17 +1065,62 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                       </select>
                     </div>
 
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-slate-500 font-bold">Posisi:</span>
+                    {/* Pasang Penopang Schoor langsung pada tiang */}
+                    <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded border border-slate-200">
+                      <span className="text-slate-700 font-bold">Schoor:</span>
                       <select
-                        value={selectedNode.posisiTiang || "Tumpu"}
-                        onChange={(e) => updateSelectedNode({ posisiTiang: e.target.value as any })}
-                        className="px-2 py-1 border border-slate-300 rounded font-semibold text-xs outline-none"
+                        value={selectedNode.schoor ? selectedNode.schoor.jenis : "None"}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === "None") {
+                            updateSelectedNode({ schoor: undefined });
+                          } else {
+                            updateSelectedNode({
+                              schoor: {
+                                jenis: val as any,
+                                tipe: selectedNode.schoor?.tipe || "Standar",
+                                rotation: selectedNode.schoor?.rotation || 0,
+                              },
+                            });
+                          }
+                        }}
+                        className="px-1.5 py-0.5 border border-slate-300 rounded font-semibold text-xs outline-none"
                       >
-                        <option value="Tumpu">Tumpu (Lurus)</option>
-                        <option value="Topang-Sudut">Topang-Sudut (Belokan)</option>
-                        <option value="Ujung">Ujung (Dead End)</option>
+                        <option value="None">Tanpa Schoor</option>
+                        <option value="Treck">Treckschoor (Tarik)</option>
+                        <option value="Druck">Drukschoor (Dorong)</option>
+                        <option value="Kontramast">Kontramast</option>
                       </select>
+
+                      {selectedNode.schoor && (
+                        <>
+                          {selectedNode.schoor.jenis === "Treck" && (
+                            <select
+                              value={selectedNode.schoor.tipe || "Standar"}
+                              onChange={(e) => updateSelectedNode({
+                                schoor: { ...selectedNode.schoor!, tipe: e.target.value as any }
+                              })}
+                              className="px-1 py-0.5 border border-slate-300 rounded font-semibold text-xs outline-none"
+                            >
+                              <option value="Standar">Standar</option>
+                              <option value="Tolak Pinggang">Tolak Pinggang</option>
+                            </select>
+                          )}
+                          <span className="text-slate-500 font-bold ml-1">Rot:</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={360}
+                            step={15}
+                            value={selectedNode.schoor.rotation || 0}
+                            onChange={(e) => updateSelectedNode({
+                              schoor: { ...selectedNode.schoor!, rotation: parseInt(e.target.value) || 0 }
+                            })}
+                            className="w-14 px-1 py-0.5 border border-slate-300 rounded font-mono font-bold text-xs"
+                          />
+                          <span>°</span>
+                        </>
+                      )}
                     </div>
                   </>
                 )}
@@ -1115,7 +1182,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
             {selectedEdge && (
               <div className="flex items-center gap-4 flex-wrap flex-1 text-xs">
                 <span className="font-black text-slate-800 uppercase tracking-tight">
-                  {selectedEdge.type === "kabel-tr" ? "Kabel TR" : selectedEdge.type === "kabel-existing" ? "Kabel Exist" : "Kabel TM"}:
+                  Atribut {selectedEdge.type === "kabel-existing" ? "Kabel Exist" : selectedEdge.jenisJaringan || "SUTM"}:
                 </span>
 
                 <div className="flex items-center gap-1.5 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
@@ -1133,18 +1200,15 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                 <div className="flex items-center gap-1.5">
                   <span className="text-slate-500 font-bold">Jaringan:</span>
                   <select
-                    value={selectedEdge.type === "kabel-tr" ? "TR" : "TM"}
-                    onChange={(e) => {
-                      const isTR = e.target.value === "TR";
-                      updateSelectedEdge({
-                        type: isTR ? "kabel-tr" : "kabel-tm",
-                        jenisJaringan: isTR ? "SKUTR" : "SUTM",
-                      });
-                    }}
+                    value={selectedEdge.jenisJaringan || "SUTM"}
+                    onChange={(e) => updateSelectedEdge({ jenisJaringan: e.target.value })}
                     className="px-2 py-1 border border-slate-300 rounded font-semibold text-xs outline-none"
                   >
-                    <option value="TM">TM (Merah - SUTM)</option>
-                    <option value="TR">TR (Hijau - SKUTR)</option>
+                    <option value="SUTM">SUTM (Saluran Udara TM)</option>
+                    <option value="SKUTR">SKUTR (Saluran Kabel Udara TR)</option>
+                    <option value="SKUTM">SKUTM (Kabel Udara TM / MVTIC)</option>
+                    <option value="SKTM">SKTM (Kabel Tanah TM)</option>
+                    <option value="SKTR">SKTR (Kabel Tanah TR)</option>
                   </select>
                 </div>
 

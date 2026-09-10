@@ -1,4 +1,5 @@
 import type { GarduConfig, SchoorConfig } from "../types/spark";
+import { SPARK_ASSET_COLORS } from "./assetStyles";
 
 export function buildSchoorSvg(
   schoor: SchoorConfig,
@@ -9,9 +10,9 @@ export function buildSchoorSvg(
   const ph = poleSize / 2;
   const opacity = isAutoSchoor ? "0.75" : "1";
 
-  let sColor = isAutoSchoor ? "#34d399" : "#dc2626";
-  if (schoor.jenis === "Druck")      sColor = isAutoSchoor ? "#22d3ee" : "#0284c7";
-  if (schoor.jenis === "Kontramast") sColor = isAutoSchoor ? "#86efac" : "#059669";
+  let sColor: string = isAutoSchoor ? SPARK_ASSET_COLORS.SCHOOR.autoTreck : SPARK_ASSET_COLORS.SCHOOR.treck;
+  if (schoor.jenis === "Druck")      sColor = isAutoSchoor ? SPARK_ASSET_COLORS.SCHOOR.autoDruck : SPARK_ASSET_COLORS.SCHOOR.druck;
+  if (schoor.jenis === "Kontramast") sColor = isAutoSchoor ? SPARK_ASSET_COLORS.SCHOOR.autoKontramast : SPARK_ASSET_COLORS.SCHOOR.kontramast;
 
   const svgStyle = `position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(${rot}deg);pointer-events:auto;cursor:grab;overflow:visible;z-index:7;opacity:${opacity};`;
 
@@ -50,14 +51,15 @@ export function buildGarduSvg(
   currentPoleBorder: string,
   isLast: boolean
 ): string {
-  const trafoColor = "#9333ea";
+  const trafoColor = SPARK_ASSET_COLORS.GARDU.stroke;
+  const trafoBg = SPARK_ASSET_COLORS.GARDU.fill;
   const strokeW = isLast ? "3" : "2";
   const gap = 6;
 
   if (gardu.jenis === "Cantol") {
     return `<div style="position:absolute;top:-${poleSize}px;left:0px;width:${poleSize}px;height:${poleSize}px;z-index:8;">
       <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style="overflow:visible;">
-        <polygon points="50,0 100,100 0,100" fill="#f3e8ff" stroke="${trafoColor}" stroke-width="4" stroke-linejoin="round"/>
+        <polygon points="50,0 100,100 0,100" fill="${trafoBg}" stroke="${trafoColor}" stroke-width="4" stroke-linejoin="round"/>
       </svg>
     </div>`;
   }
@@ -66,7 +68,7 @@ export function buildGarduSvg(
     return `<div style="position:absolute;top:0px;left:-${poleSize + gap}px;width:${poleSize}px;height:${poleSize}px;border:${strokeW}px solid ${currentPoleBorder};background:white;border-radius:50%;z-index:9;box-shadow:0px 2px 4px rgba(0,0,0,0.5);"></div>
     <div style="position:absolute;top:-${poleSize}px;left:-${poleSize + gap}px;width:${poleSize * 2 + gap}px;height:${poleSize}px;z-index:8;">
       <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style="overflow:visible;">
-        <polygon points="50,0 100,100 0,100" fill="#f3e8ff" stroke="${trafoColor}" stroke-width="4" stroke-linejoin="round"/>
+        <polygon points="50,0 100,100 0,100" fill="${trafoBg}" stroke="${trafoColor}" stroke-width="4" stroke-linejoin="round"/>
       </svg>
     </div>`;
   }
@@ -75,7 +77,7 @@ export function buildGarduSvg(
   return `<div style="position:absolute;top:-${poleSize + gap}px;left:0px;width:${poleSize}px;height:${poleSize}px;border:${strokeW}px solid ${currentPoleBorder};background:white;border-radius:50%;z-index:9;box-shadow:0px 2px 4px rgba(0,0,0,0.5);"></div>
   <div style="position:absolute;top:-${poleSize + gap}px;left:${poleSize}px;width:${poleSize}px;height:${poleSize * 2 + gap}px;z-index:8;">
     <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style="overflow:visible;">
-      <polygon points="0,0 100,50 0,100" fill="#f3e8ff" stroke="${trafoColor}" stroke-width="4" stroke-linejoin="round"/>
+      <polygon points="0,0 100,50 0,100" fill="${trafoBg}" stroke="${trafoColor}" stroke-width="4" stroke-linejoin="round"/>
     </svg>
   </div>`;
 }

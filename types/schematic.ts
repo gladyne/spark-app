@@ -5,7 +5,9 @@ export type SchematicNodeType =
   | "tiang-tr"
   | "gardu"
   | "box-app"
-  | "kontramast";
+  | "kontramast"
+  | "treck-schoor"
+  | "druck-schoor";
 
 export type SchematicEdgeType =
   | "kabel-existing"
@@ -37,7 +39,12 @@ export interface SchematicNode {
   boxKva?: number; // misal 197 kVA, 41.5 kVA
   boxType?: string; // misal Pengukuran Tidak Langsung
 
-  // Atribut Kontramast / Penopang
+  // Atribut Penopang Mekanis (Schoor)
+  schoor?: {
+    jenis: "Treck" | "Druck" | "Kontramast";
+    tipe?: "Standar" | "Tolak Pinggang";
+    rotation?: number; // derajat 0-360
+  };
   kontramastTipe?: "Standar" | "Tolak Pinggang";
 }
 

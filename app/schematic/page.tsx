@@ -1,9 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect, Suspense } from "react";
+import { Suspense } from "react";
 
 // Dynamic import with SSR disabled for Canvas & LocalStorage
 const SchematicWorkspace = dynamic(
@@ -24,26 +23,7 @@ const SchematicWorkspace = dynamic(
 );
 
 function SchematicContent() {
-  const { status } = useSession();
   const router = useRouter();
-
-  useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/login");
-    }
-  }, [status, router]);
-
-  if (status === "loading") {
-    return (
-      <div className="flex h-screen w-full items-center justify-center bg-slate-950 text-slate-100">
-        <div className="text-sm font-bold text-amber-400 animate-pulse">
-          Memverifikasi sesi...
-        </div>
-      </div>
-    );
-  }
-
-  if (status === "unauthenticated") return null;
 
   return (
     <SchematicWorkspace

@@ -61,12 +61,30 @@ export function convertSchematicToRabLayers(schematic: SchematicData): LayerInpu
     };
   });
 
-  // Siapkan kontramast / schoors
+  // Siapkan kontramast & schoors (Treck, Druck, Kontramast)
   const schoors: Record<number, SchoorConfig> = {};
-  kontramastNodes.forEach((_, idx) => {
-    schoors[idx] = {
-      jenis: "Kontramast",
-    };
+  let schIdx = 0;
+  
+  // 1. Schoor yang terpasang pada tiang rencana
+  rencanaPoles.forEach((p, idx) => {
+    if (p.schoor) {
+      schoors[idx] = {
+        jenis: p.schoor.jenis,
+        rotation: p.schoor.rotation,
+      };
+      schIdx++;
+    }
+  });
+
+  // 2. Simbol schoor mandiri di kanvas
+  nodes.forEach(n => {
+    if (n.type === "kontramast") {
+      schoors[1000 + schIdx++] = { jenis: "Kontramast" };
+    } else if (n.type === "treck-schoor") {
+      schoors[1000 + schIdx++] = { jenis: "Treck" };
+    } else if (n.type === "druck-schoor") {
+      schoors[1000 + schIdx++] = { jenis: "Druck" };
+    }
   });
 
   // Kelompokkan kabel rencana berdasarkan kombinasi (jenisJaringan + konduktorJenis + kondukturUkuran)
