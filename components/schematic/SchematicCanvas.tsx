@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import type { SchematicData, SchematicNode, SchematicEdge, SchematicNodeType, SchematicEdgeType } from "../../types/schematic";
 import {
   SPARK_ASSET_COLORS,
@@ -9,7 +9,56 @@ import {
   renderSchoorSvg,
   renderBoxAppSvg,
   getCableStyle,
+  getNodeLabelConfig,
 } from "../../lib/assetStyles";
+
+/**
+ * Collision Detection & Dynamic Stagger Layout untuk Label Node
+ * Mencegah label saling bertumpuk ketika jarak komponen berdekatan (< 75px)
+ */
+function computeNodeLabelOffsets(nodes: SchematicNode[]): Record<string, { dx: number; dy: number }> {
+  const result: Record<string, { dx: number; dy: number }> = {};
+
+  // Posisi dasar label tepat di bawah simbol
+  for (const n of nodes) {
+    const isPortal = n.type === "gardu" && (n.garduJenis === "Portal" || !n.garduJenis);
+    result[n.id] = {
+      dx: isPortal ? -10 : 0,
+      dy: 16,
+    };
+  }
+
+  // Sort nodes kiri ke kanan untuk urutan stagger teratur
+  const sorted = [...nodes].sort((a, b) => a.x - b.x);
+
+  for (let i = 0; i < sorted.length; i++) {
+    const curr = sorted[i];
+
+    for (let j = 0; j < i; j++) {
+      const prev = sorted[j];
+      const distX = Math.abs(curr.x - prev.x);
+      const distY = Math.abs(curr.y - prev.y);
+
+      // Jika jarak X < 75px dan Y < 45px (berdekatan pada rantai horizontal yang sama)
+      if (distX < 75 && distY < 45) {
+        // Stagger vertikal bergantian: jika prev di 16, curr turun ke 36
+        if (result[prev.id].dy <= 18) {
+          result[curr.id].dy = 36;
+        } else if (result[prev.id].dy >= 34) {
+          result[curr.id].dy = 16;
+        }
+
+        // Jika jarak horizontal sangat sempit (< 50px), beri dorongan ke kiri/kanan
+        if (distX < 50) {
+          result[prev.id].dx -= 8;
+          result[curr.id].dx += 8;
+        }
+      }
+    }
+  }
+
+  return result;
+}
 
 interface Props {
   schematic: SchematicData;
@@ -41,6 +90,7 @@ type ActiveTool =
 
 export default function SchematicCanvas({ schematic, onChange, isPrinting = false }: Props) {
   const { nodes, edges } = schematic;
+  const labelOffsets = useMemo(() => computeNodeLabelOffsets(nodes), [nodes]);
 
   const [activeTool, setActiveTool] = useState<ActiveTool>("select");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -869,23 +919,27 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                     />
 
                     {/* Cable Length Tag (Meter) */}
-                    <g transform={`translate(${midX}, ${midY - 9})`}>
+                    <g transform={`translate(${midX}, ${midY - 8})`}>
                       <rect
-                        x={-28}
-                        y={-8}
-                        width={56}
-                        height={16}
+                        x={-22}
+                        y={-7.5}
+                        width={44}
+                        height={15}
                         rx={4}
                         fill="white"
                         stroke={isSelected ? SPARK_ASSET_COLORS.POLE.selectedHalo : "#CBD5E1"}
-                        strokeWidth={isSelected ? 1.5 : 1}
+                        strokeWidth={1}
                         className="shadow-xs"
                       />
                       <text
                         x={0}
                         y={3.5}
                         textAnchor="middle"
-                        className="font-mono font-bold text-[9px] fill-slate-800 select-none"
+                        fontSize="10"
+                        fontWeight="900"
+                        fill="#1D4ED8"
+                        fontFamily="system-ui, -apple-system, sans-serif"
+                        className="select-none"
                       >
                         {edge.lengthM} m
                       </text>
@@ -894,7 +948,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                 );
               })}
 
-              {/* ─── Render Nodes (Simbol Persis SparkMap.tsx & svgUtils.ts) ─── */}
+              {/* ─── Render Nodes ─── */}
               {nodes.map(node => {
                 const isSelected = selectedNodeId === node.id;
                 const isCableStart = cableStartNodeId === node.id;
@@ -904,6 +958,9 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                   node.type === "tiang-tr" ||
                   node.type === "tiang-rencana" ||
                   node.type === "tiang-existing";
+
+                const lblConfig = getNodeLabelConfig(node);
+                const offset = labelOffsets[node.id] || { dx: 0, dy: 16 };
 
                 return (
                   <g
@@ -916,11 +973,11 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                     {/* Selection Aura */}
                     {(isSelected || isCableStart) && (
                       <circle
-                        r={20}
-                        fill={isCableStart ? "rgba(239, 68, 68, 0.25)" : "rgba(249, 115, 22, 0.25)"}
+                        r={13}
+                        fill={isCableStart ? "rgba(239, 68, 68, 0.2)" : "rgba(249, 115, 22, 0.2)"}
                         stroke={isCableStart ? "#EF4444" : SPARK_ASSET_COLORS.POLE.selectedHalo}
-                        strokeWidth={2}
-                        strokeDasharray="4,2"
+                        strokeWidth={1.8}
+                        strokeDasharray="3,2"
                       />
                     )}
 
@@ -950,6 +1007,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                         jenis: node.garduJenis || "Portal",
                         trafoKva: node.trafoKva || 100,
                         poleSize: 17,
+                        renderMainPole: true,
                       })
                     )}
 
@@ -983,18 +1041,90 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                     {node.type === "box-app" && (
                       renderBoxAppSvg({
                         boxKva: node.boxKva || 197,
-                        size: 24,
+                        size: 18,
                       })
                     )}
 
-                    {/* Label Text di bawah simbol */}
-                    <text
-                      y={20}
-                      textAnchor="middle"
-                      className="text-[10px] font-bold fill-slate-900 select-none drop-shadow-xs"
+                    {/* ── Label Multi-baris ── */}
+                    <g
+                      transform={`translate(${offset.dx}, ${offset.dy})`}
+                      pointerEvents="none"
+                      className="select-none"
                     >
-                      {node.label || ""}
-                    </text>
+                      {/* Line 1: Konstruksi / Kode Utama */}
+                      <text
+                        x={0}
+                        y={0}
+                        textAnchor="middle"
+                        fontSize="11"
+                        fontWeight="900"
+                        fill={lblConfig.primaryColor}
+                        stroke="#ffffff"
+                        strokeWidth={3}
+                        strokeLinejoin="round"
+                        paintOrder="stroke fill"
+                        fontFamily="system-ui, -apple-system, sans-serif"
+                      >
+                        {lblConfig.primaryText}
+                      </text>
+
+                      {/* Line 2 (Gardu Jenis) */}
+                      {lblConfig.garduText && (
+                        <text
+                          x={0}
+                          y={12}
+                          textAnchor="middle"
+                          fontSize="9.5"
+                          fontWeight="800"
+                          fill="#7e22ce"
+                          stroke="#ffffff"
+                          strokeWidth={2.5}
+                          strokeLinejoin="round"
+                          paintOrder="stroke fill"
+                          fontFamily="system-ui, -apple-system, sans-serif"
+                        >
+                          {lblConfig.garduText}
+                        </text>
+                      )}
+
+                      {/* Line 3 (Trafo kVA) */}
+                      {lblConfig.trafoText && (
+                        <text
+                          x={0}
+                          y={lblConfig.garduText ? 23 : 12}
+                          textAnchor="middle"
+                          fontSize="9.5"
+                          fontWeight="900"
+                          fill={lblConfig.garduText ? "#7e22ce" : "#1e3a8a"}
+                          stroke="#ffffff"
+                          strokeWidth={2.5}
+                          strokeLinejoin="round"
+                          paintOrder="stroke fill"
+                          fontFamily="system-ui, -apple-system, sans-serif"
+                        >
+                          {lblConfig.trafoText}
+                        </text>
+                      )}
+
+                      {/* Line 2 (Secondary Tiang) */}
+                      {lblConfig.secondaryText && !lblConfig.garduText && (
+                        <text
+                          x={0}
+                          y={11}
+                          textAnchor="middle"
+                          fontSize="9"
+                          fontWeight="700"
+                          fill="#334155"
+                          stroke="#ffffff"
+                          strokeWidth={2.5}
+                          strokeLinejoin="round"
+                          paintOrder="stroke fill"
+                          fontFamily="system-ui, -apple-system, sans-serif"
+                        >
+                          {lblConfig.secondaryText}
+                        </text>
+                      )}
+                    </g>
                   </g>
                 );
               })}

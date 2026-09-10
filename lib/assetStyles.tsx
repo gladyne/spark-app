@@ -218,85 +218,67 @@ export function renderPoleSvg({
 }
 
 /**
- * Render Simbol Gardu (Cantol / Portal) - Persis buildGarduSvg di svgUtils.ts
+ * Render Simbol Gardu (Cantol / Portal) - Persis SparkMap.tsx & svgUtils.ts
+ * Tanpa teks bertumpuk di dalam segitiga trafo.
  */
 export function renderGarduSvg({
   jenis = "Portal",
   orientasi = "Horizontal",
   trafoKva = 100,
   poleSize = 17,
+  renderMainPole = true,
 }: {
   jenis?: "Cantol" | "Portal";
   orientasi?: "Horizontal" | "Vertikal";
   trafoKva?: number;
   poleSize?: number;
+  renderMainPole?: boolean;
 }) {
   const trafoColor = SPARK_ASSET_COLORS.GARDU.stroke;
   const trafoBg = SPARK_ASSET_COLORS.GARDU.fill;
-  const gap = 6;
+  const r = poleSize / 2; // 8.5
+  const gap = 3;
 
   if (jenis === "Cantol") {
-    // 1 Tiang dengan segitiga trafo di atasnya
+    // 1 Tiang dengan segitiga trafo duduk pas di atas tiang (tinggi 14px, lebar 17px)
     return (
       <g>
+        {renderMainPole && (
+          <circle cx="0" cy="0" r={r} fill="white" stroke="#000000" strokeWidth={2} />
+        )}
         <polygon
-          points={`0,-${poleSize * 1.6} ${poleSize * 0.8},-${poleSize * 0.4} -${poleSize * 0.8},-${poleSize * 0.4}`}
+          points={`0,-${r + 14} ${r},-${r - 1} -${r},-${r - 1}`}
           fill={trafoBg}
           stroke={trafoColor}
-          strokeWidth={2.5}
+          strokeWidth={2}
           strokeLinejoin="round"
         />
-        <text
-          x="0"
-          y={-(poleSize * 0.7)}
-          textAnchor="middle"
-          fontSize="7"
-          fontWeight="900"
-          fill={trafoColor}
-        >
-          {trafoKva}kVA
-        </text>
       </g>
     );
   }
 
-  // Portal: 2 Tiang dengan bentang trafo di atasnya
-  const offset = orientasi === "Horizontal" ? -(poleSize + gap) : 0;
-  const offsetY = orientasi === "Vertikal" ? -(poleSize + gap) : 0;
-
+  // Portal: 2 Tiang berdampingan dengan bentang trafo di atas kedua tiang
+  const offset = -(poleSize + gap); // -(17 + 3) = -20
   return (
     <g>
-      {/* Tiang kedua dari gardu portal */}
-      <circle
-        cx={offset}
-        cy={offsetY}
-        r={poleSize / 2}
-        fill="white"
-        stroke="#000000"
-        strokeWidth={2}
-      />
+      {renderMainPole && (
+        <>
+          <circle cx="0" cy="0" r={r} fill="white" stroke="#000000" strokeWidth={2} />
+          <circle cx={offset} cy="0" r={r} fill="white" stroke="#000000" strokeWidth={2} />
+        </>
+      )}
       {/* Balok / Segitiga trafo di atas kedua tiang */}
       <polygon
         points={`
-          ${offset / 2},-${poleSize * 1.8}
-          ${poleSize * 0.9},-${poleSize * 0.5}
-          ${offset - poleSize * 0.3},-${poleSize * 0.5}
+          ${offset / 2},-${r + 14}
+          ${r * 0.8},-${r - 1}
+          ${offset - r * 0.8},-${r - 1}
         `}
         fill={trafoBg}
         stroke={trafoColor}
-        strokeWidth={2.8}
+        strokeWidth={2.2}
         strokeLinejoin="round"
       />
-      <text
-        x={offset / 2}
-        y={-(poleSize * 0.8)}
-        textAnchor="middle"
-        fontSize="7.5"
-        fontWeight="900"
-        fill={trafoColor}
-      >
-        {trafoKva}kVA
-      </text>
     </g>
   );
 }
@@ -327,8 +309,8 @@ export function renderSchoorSvg({
       {/* 1. Treckschoor Standar (Panah tarik keluar menjauhi tiang) */}
       {jenis === "Treck" && tipe !== "Tolak Pinggang" && (
         <g>
-          <line x1="0" y1={-ph} x2="0" y2="-44" stroke={sColor} strokeWidth="2.5" strokeLinecap="round" />
-          <polygon points="-4.5,-35 0,-44 4.5,-35" fill={sColor} />
+          <line x1="0" y1={-ph} x2="0" y2="-36" stroke={sColor} strokeWidth="2.2" strokeLinecap="round" />
+          <polygon points="-3.5,-28 0,-36 3.5,-28" fill={sColor} />
         </g>
       )}
 
@@ -336,33 +318,33 @@ export function renderSchoorSvg({
       {jenis === "Treck" && tipe === "Tolak Pinggang" && (
         <g>
           {/* Batang tolak pinggang */}
-          <line x1="0" y1="-22" x2="16" y2="-22" stroke={sColor} strokeWidth="2.5" strokeLinecap="round" />
-          <circle cx="16" cy="-22" r="2.5" fill={sColor} />
+          <line x1="0" y1="-18" x2="14" y2="-18" stroke={sColor} strokeWidth="2.2" strokeLinecap="round" />
+          <circle cx="14" cy="-18" r="2" fill={sColor} />
           {/* Kawat tarik melalui ujung penopang tolak pinggang ke jangkar */}
-          <line x1="0" y1={-ph} x2="16" y2="-22" stroke={sColor} strokeWidth="2" />
-          <line x1="16" y1="-22" x2="0" y2="-48" stroke={sColor} strokeWidth="2.5" strokeLinecap="round" />
-          <polygon points="-4.5,-39 0,-48 4.5,-39" fill={sColor} />
+          <line x1="0" y1={-ph} x2="14" y2="-18" stroke={sColor} strokeWidth="1.8" />
+          <line x1="14" y1="-18" x2="0" y2="-38" stroke={sColor} strokeWidth="2.2" strokeLinecap="round" />
+          <polygon points="-3.5,-30 0,-38 3.5,-30" fill={sColor} />
         </g>
       )}
 
       {/* 2. Drukschoor (Panah dorong mengarah ke tiang) */}
       {jenis === "Druck" && (
         <g>
-          <line x1="0" y1={-(ph + 11)} x2="0" y2="-44" stroke={sColor} strokeWidth="2.5" strokeLinecap="round" />
-          <polygon points={`-4.5,-${ph + 11} 0,-${ph + 1} 4.5,-${ph + 11}`} fill={sColor} />
+          <line x1="0" y1={-(ph + 8)} x2="0" y2="-36" stroke={sColor} strokeWidth="2.2" strokeLinecap="round" />
+          <polygon points={`-3.5,-${ph + 8} 0,-${ph} 3.5,-${ph + 8}`} fill={sColor} />
         </g>
       )}
 
-      {/* 3. Kontramast (Kawat putus-putus ke tiang seberang + treckschoor) */}
+      {/* 3. Kontramast (Kawat putus-putus ke tiang jangkar seberang + treckschoor) */}
       {jenis === "Kontramast" && (
         <g>
           {/* Span kawat ke tiang jangkar seberang */}
-          <line x1="0" y1={-ph} x2="0" y2="-48" stroke={sColor} strokeWidth="2" strokeDasharray="5 3" />
+          <line x1="0" y1={-ph} x2="0" y2="-40" stroke={sColor} strokeWidth="1.8" strokeDasharray="4 2" />
           {/* Tiang jangkar seberang */}
-          <circle cx="0" cy="-56" r="7" fill="white" stroke={sColor} strokeWidth="2.5" />
+          <circle cx="0" cy="-46" r="5.5" fill="white" stroke={sColor} strokeWidth="2" />
           {/* Kawat penarik ke tanah dari tiang jangkar */}
-          <line x1="0" y1="-63" x2="0" y2="-88" stroke={sColor} strokeWidth="2" strokeLinecap="round" />
-          <polygon points="-4,-78 0,-88 4,-78" fill={sColor} />
+          <line x1="0" y1="-51.5" x2="0" y2="-72" stroke={sColor} strokeWidth="1.8" strokeLinecap="round" />
+          <polygon points="-3,-64 0,-72 3,-64" fill={sColor} />
         </g>
       )}
     </g>
@@ -374,7 +356,7 @@ export function renderSchoorSvg({
  */
 export function renderBoxAppSvg({
   boxKva = 197,
-  size = 24,
+  size = 18,
 }: {
   boxKva?: number;
   size?: number;
@@ -389,26 +371,94 @@ export function renderBoxAppSvg({
         height={size}
         fill={SPARK_ASSET_COLORS.BOX_APP.bg}
         stroke={SPARK_ASSET_COLORS.BOX_APP.border}
-        strokeWidth={2.5}
-        rx={3}
+        strokeWidth={2}
+        rx={2}
       />
       <rect
-        x={-hs * 0.7}
-        y={-hs * 0.7}
-        width={size * 0.7}
+        x={-hs * 0.65}
+        y={-hs * 0.65}
+        width={size * 0.65}
         height={size * 0.28}
         fill={SPARK_ASSET_COLORS.BOX_APP.accent}
+        rx={1}
       />
       <text
         x="0"
         y={hs * 0.6}
         textAnchor="middle"
-        fontSize={size * 0.32}
+        fontSize={size * 0.35}
         fontWeight="900"
         fill={SPARK_ASSET_COLORS.BOX_APP.text}
+        fontFamily="sans-serif"
       >
         APP
       </text>
     </g>
   );
+}
+
+/**
+ * Helper memformat teks label komponen persis format SparkMap.tsx (Image 1)
+ */
+export function getNodeLabelConfig(node: {
+  id: string;
+  type: string;
+  label?: string;
+  konstruksi?: string;
+  garduJenis?: string;
+  trafoKva?: number;
+  boxKva?: number;
+}): {
+  primaryText: string;
+  primaryColor: string;
+  garduText?: string;
+  trafoText?: string;
+  secondaryText?: string;
+} {
+  if (node.type === "gardu") {
+    const ktr = node.konstruksi || "A1";
+    const gType = `Gardu ${node.garduJenis || "Portal"}`;
+    const kva = `${node.trafoKva || 100} kVA`;
+    return {
+      primaryText: ktr,
+      primaryColor: "#c2410c",
+      garduText: gType,
+      trafoText: kva,
+    };
+  }
+
+  if (node.type === "box-app") {
+    return {
+      primaryText: "BOX APP",
+      primaryColor: "#1e3a8a",
+      trafoText: `${node.boxKva || 197} kVA`,
+    };
+  }
+
+  if (node.type === "treck-schoor" || node.type === "druck-schoor" || node.type === "kontramast") {
+    const name = node.type === "treck-schoor" ? "Treck" : node.type === "druck-schoor" ? "Druck" : "Kontramast";
+    return {
+      primaryText: node.label || name,
+      primaryColor: node.type === "kontramast" ? "#059669" : node.type === "druck-schoor" ? "#0284c7" : "#dc2626",
+    };
+  }
+
+  // Tiang
+  const isExist = node.type === "tiang-existing";
+  const ktr = node.konstruksi || (isExist ? "Exist" : "A1");
+  const lbl = node.label || "";
+
+  // Jika label beda dengan konstruksi (misal "T.01")
+  if (lbl && lbl !== ktr && !lbl.toLowerCase().includes("tiang")) {
+    return {
+      primaryText: ktr,
+      primaryColor: isExist ? "#475569" : "#c2410c",
+      secondaryText: lbl,
+    };
+  }
+
+  return {
+    primaryText: ktr,
+    primaryColor: isExist ? "#475569" : "#c2410c",
+  };
 }
