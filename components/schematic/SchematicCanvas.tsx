@@ -11,6 +11,50 @@ import {
   getCableStyle,
   getNodeLabelConfig,
 } from "../../lib/assetStyles";
+import { convertSchematicToRabLayers } from "../../lib/rab/schematicAdapter";
+import { calculateRabVolumes } from "../../lib/rab/rabMapper";
+import { formatRupiah } from "../sidebar/RabSummaryPanel";
+
+/**
+ * Geometry Helpers untuk Mode Seleksi Multi (Rectangle, Polygon, Lasso, Circle)
+ */
+function pointInPolygon(pt: { x: number; y: number }, poly: { x: number; y: number }[]): boolean {
+  if (poly.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y;
+    const xj = poly[j].x, yj = poly[j].y;
+    const intersect = ((yi > pt.y) !== (yj > pt.y)) && (pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function isPointInRect(pt: { x: number; y: number }, minX: number, maxX: number, minY: number, maxY: number): boolean {
+  return pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY;
+}
+
+function isPointInCircle(pt: { x: number; y: number }, cx: number, cy: number, r: number): boolean {
+  return Math.hypot(pt.x - cx, pt.y - cy) <= r;
+}
+
+function isLineInRect(p1: { x: number; y: number }, p2: { x: number; y: number }, minX: number, maxX: number, minY: number, maxY: number): boolean {
+  if (isPointInRect(p1, minX, maxX, minY, maxY) || isPointInRect(p2, minX, maxX, minY, maxY)) return true;
+  const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+  return isPointInRect(mid, minX, maxX, minY, maxY);
+}
+
+function isLineInCircle(p1: { x: number; y: number }, p2: { x: number; y: number }, cx: number, cy: number, r: number): boolean {
+  if (isPointInCircle(p1, cx, cy, r) || isPointInCircle(p2, cx, cy, r)) return true;
+  const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+  return isPointInCircle(mid, cx, cy, r);
+}
+
+function isLineInPolygon(p1: { x: number; y: number }, p2: { x: number; y: number }, poly: { x: number; y: number }[]): boolean {
+  if (pointInPolygon(p1, poly) || pointInPolygon(p2, poly)) return true;
+  const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+  return pointInPolygon(mid, poly);
+}
 
 /**
  * Collision Detection & Dynamic Stagger Layout untuk Label Node
@@ -66,8 +110,12 @@ interface Props {
   isPrinting?: boolean;
 }
 
-type ActiveTool =
+export type ActiveTool =
   | "select"
+  | "select-rect"
+  | "select-polygon"
+  | "select-lasso"
+  | "select-circle"
   | "tiang-tm"
   | "tiang-baja"
   | "tiang-existing"
@@ -93,14 +141,39 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
   const labelOffsets = useMemo(() => computeNodeLabelOffsets(nodes), [nodes]);
 
   const [activeTool, setActiveTool] = useState<ActiveTool>("select");
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
+  const [selectedEdgeIds, setSelectedEdgeIds] = useState<Set<string>>(new Set());
   const [cableStartNodeId, setCableStartNodeId] = useState<string | null>(null);
 
-  // Dragging node state
+  // Selection Shape State
+  type SelectionShape =
+    | { type: "rect"; startX: number; startY: number; currentX: number; currentY: number }
+    | { type: "circle"; cx: number; cy: number; currentX: number; currentY: number }
+    | { type: "lasso"; points: { x: number; y: number }[] }
+    | { type: "polygon"; points: { x: number; y: number }[]; currentPoint?: { x: number; y: number } }
+    | null;
+
+  const [selectionShape, setSelectionShape] = useState<SelectionShape>(null);
+
+  // Multi-node dragging state
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
-  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [dragStartSnapshot, setDragStartSnapshot] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [dragStartSnapshot, setDragStartSnapshot] = useState<{ id: string; x: number; y: number }[] | null>(null);
+  const [dragStartCoords, setDragStartCoords] = useState<{ x: number; y: number } | null>(null);
+
+  // Modals state
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
+  const [bulkForm, setBulkForm] = useState({
+    materialTiang: "",
+    tinggiTiang: "",
+    kekuatanTiang: "",
+    posisiTiang: "",
+    garduJenis: "",
+    trafoKva: "",
+    jenisJaringan: "",
+    konduktorJenis: "",
+    kondukturUkuran: "",
+  });
 
   // In-memory Undo / Redo History Stack (maks 50 langkah)
   const [past, setPast] = useState<SchematicData[]>([]);
@@ -132,7 +205,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
     return { x, y };
   }, [zoom, pan]);
 
-  // Helper push ke history sebelum commit perubahan
+  // Helper push ke history sebelum commit perubahan (1-step undo)
   const pushState = useCallback((newSchematic: SchematicData) => {
     setPast(prev => [...prev.slice(-49), schematic]);
     setFuture([]);
@@ -159,7 +232,142 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
     onChange(next);
   }, [future, schematic, onChange]);
 
-  // Global Keyboard Shortcuts (Undo/Redo & Delete)
+  // Selection Sets & Breakdown
+  const selectedNodes = useMemo(() => nodes.filter(n => selectedNodeIds.has(n.id)), [nodes, selectedNodeIds]);
+  const selectedEdges = useMemo(() => edges.filter(e => selectedEdgeIds.has(e.id)), [edges, selectedEdgeIds]);
+  const totalSelectedCount = selectedNodes.length + selectedEdges.length;
+
+  const breakdown = useMemo(() => {
+    let tiangCount = 0;
+    let garduCount = 0;
+    let schoorCount = 0;
+    let boxCount = 0;
+    let cableCount = selectedEdges.length;
+    let cableTotalM = 0;
+
+    for (const n of selectedNodes) {
+      if (n.type.startsWith("tiang")) tiangCount++;
+      else if (n.type === "gardu") garduCount++;
+      else if (n.type === "box-app") boxCount++;
+      else if (n.type.includes("schoor") || n.type === "kontramast") schoorCount++;
+    }
+
+    for (const e of selectedEdges) {
+      cableTotalM += (e.lengthM || 0);
+    }
+
+    return { tiangCount, garduCount, schoorCount, boxCount, cableCount, cableTotalM };
+  }, [selectedNodes, selectedEdges]);
+
+  // Subset RAB Estimation: Filter subset data terselect dan panggil rabMapper.ts
+  const selectedRabTotal = useMemo(() => {
+    if (selectedNodes.length === 0 && selectedEdges.length === 0) return 0;
+    try {
+      const subsetSchematic: SchematicData = {
+        ...schematic,
+        nodes: selectedNodes,
+        edges: selectedEdges,
+      };
+      const layers = convertSchematicToRabLayers(subsetSchematic);
+      const rab = calculateRabVolumes(layers);
+      return rab.grandTotal;
+    } catch (err) {
+      console.error("Error calculating selected RAB:", err);
+      return 0;
+    }
+  }, [schematic, selectedNodes, selectedEdges]);
+
+  // Select All
+  const handleSelectAll = useCallback(() => {
+    setSelectedNodeIds(new Set(nodes.map(n => n.id)));
+    setSelectedEdgeIds(new Set(edges.map(e => e.id)));
+  }, [nodes, edges]);
+
+  // Clear Selection
+  const handleClearSelection = useCallback(() => {
+    setSelectedNodeIds(new Set());
+    setSelectedEdgeIds(new Set());
+    setSelectionShape(null);
+    setCableStartNodeId(null);
+  }, []);
+
+  // Selesaikan seleksi Poligon
+  const completePolygonSelection = useCallback((points: { x: number; y: number }[]) => {
+    if (points.length >= 3) {
+      const hitNodes = nodes.filter(n => pointInPolygon(n, points)).map(n => n.id);
+      const hitEdges = edges.filter(e => {
+        const fn = nodes.find(n => n.id === e.fromNodeId);
+        const tn = nodes.find(n => n.id === e.toNodeId);
+        return fn && tn && isLineInPolygon(fn, tn, points);
+      }).map(e => e.id);
+      setSelectedNodeIds(new Set(hitNodes));
+      setSelectedEdgeIds(new Set(hitEdges));
+    }
+    setSelectionShape(null);
+  }, [nodes, edges]);
+
+  // Bulk Delete Execution (1-step undo)
+  const handleExecuteBulkDelete = useCallback(() => {
+    const newNodes = nodes.filter(n => !selectedNodeIds.has(n.id));
+    const newEdges = edges.filter(
+      e => !selectedEdgeIds.has(e.id) && !selectedNodeIds.has(e.fromNodeId) && !selectedNodeIds.has(e.toNodeId)
+    );
+
+    pushState({
+      ...schematic,
+      nodes: newNodes,
+      edges: newEdges,
+    });
+
+    setSelectedNodeIds(new Set());
+    setSelectedEdgeIds(new Set());
+    setIsConfirmDeleteOpen(false);
+  }, [nodes, edges, selectedNodeIds, selectedEdgeIds, schematic, pushState]);
+
+  // Bulk Edit Execution (1-step undo)
+  const handleExecuteBulkEdit = useCallback(() => {
+    const newNodes = nodes.map(n => {
+      if (!selectedNodeIds.has(n.id)) return n;
+      const updated = { ...n };
+      if (bulkForm.materialTiang) updated.materialTiang = bulkForm.materialTiang as any;
+      if (bulkForm.tinggiTiang) updated.tinggiTiang = parseInt(bulkForm.tinggiTiang);
+      if (bulkForm.kekuatanTiang) updated.kekuatanTiang = parseInt(bulkForm.kekuatanTiang);
+      if (bulkForm.posisiTiang) updated.posisiTiang = bulkForm.posisiTiang as any;
+      if (bulkForm.garduJenis) updated.garduJenis = bulkForm.garduJenis as any;
+      if (bulkForm.trafoKva) updated.trafoKva = parseInt(bulkForm.trafoKva);
+      return updated;
+    });
+
+    const newEdges = edges.map(e => {
+      if (!selectedEdgeIds.has(e.id)) return e;
+      const updated = { ...e };
+      if (bulkForm.jenisJaringan) updated.jenisJaringan = bulkForm.jenisJaringan;
+      if (bulkForm.konduktorJenis) updated.konduktorJenis = bulkForm.konduktorJenis as any;
+      if (bulkForm.kondukturUkuran) updated.kondukturUkuran = parseInt(bulkForm.kondukturUkuran);
+      return updated;
+    });
+
+    pushState({
+      ...schematic,
+      nodes: newNodes,
+      edges: newEdges,
+    });
+
+    setIsBulkEditOpen(false);
+    setBulkForm({
+      materialTiang: "",
+      tinggiTiang: "",
+      kekuatanTiang: "",
+      posisiTiang: "",
+      garduJenis: "",
+      trafoKva: "",
+      jenisJaringan: "",
+      konduktorJenis: "",
+      kondukturUkuran: "",
+    });
+  }, [nodes, edges, selectedNodeIds, selectedEdgeIds, bulkForm, schematic, pushState]);
+
+  // Global Keyboard Shortcuts (Undo/Redo, Delete, Escape, Ctrl+A, Enter)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -189,49 +397,361 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
         return;
       }
 
-      // Delete / Backspace
-      if (e.key === "Delete" || e.key === "Backspace") {
-        if (selectedNodeId) {
-          pushState({
-            ...schematic,
-            nodes: nodes.filter(n => n.id !== selectedNodeId),
-            edges: edges.filter(e => e.fromNodeId !== selectedNodeId && e.toNodeId !== selectedNodeId),
-          });
-          setSelectedNodeId(null);
-        } else if (selectedEdgeId) {
-          pushState({
-            ...schematic,
-            edges: edges.filter(e => e.id !== selectedEdgeId),
-          });
-          setSelectedEdgeId(null);
+      // Select All: Ctrl+A / Cmd+A
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        handleSelectAll();
+        return;
+      }
+
+      // Enter: Selesaikan poligon aktif
+      if (e.key === "Enter") {
+        if (selectionShape && selectionShape.type === "polygon" && selectionShape.points.length >= 3) {
+          e.preventDefault();
+          completePolygonSelection(selectionShape.points);
+          return;
         }
       }
 
-      // Escape cancel selection
+      // Delete / Backspace: Konfirmasi hapus
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (selectedNodeIds.size > 0 || selectedEdgeIds.size > 0) {
+          e.preventDefault();
+          setIsConfirmDeleteOpen(true);
+        }
+        return;
+      }
+
+      // Escape: batalkan mode seleksi / bersihkan pilihan
       if (e.key === "Escape") {
+        if (selectionShape) {
+          setSelectionShape(null);
+        } else if (selectedNodeIds.size > 0 || selectedEdgeIds.size > 0) {
+          handleClearSelection();
+        }
         setActiveTool("select");
-        setSelectedNodeId(null);
-        setSelectedEdgeId(null);
         setCableStartNodeId(null);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleUndo, handleRedo, selectedNodeId, selectedEdgeId, nodes, edges, schematic, pushState]);
+  }, [handleUndo, handleRedo, handleSelectAll, handleClearSelection, completePolygonSelection, selectionShape, selectedNodeIds, selectedEdgeIds]);
 
-  // Handler klik pada kanvas (tambah node atau clear selection)
+  // Single Item Selection Compatibility untuk Property Inspector di bawah
+  const singleSelectedNodeId = selectedNodeIds.size === 1 && selectedEdgeIds.size === 0 ? Array.from(selectedNodeIds)[0] : null;
+  const selectedNode = singleSelectedNodeId ? nodes.find(n => n.id === singleSelectedNodeId) : null;
+
+  const singleSelectedEdgeId = selectedEdgeIds.size === 1 && selectedNodeIds.size === 0 ? Array.from(selectedEdgeIds)[0] : null;
+  const selectedEdge = singleSelectedEdgeId ? edges.find(e => e.id === singleSelectedEdgeId) : null;
+
+  // Update atribut single node terpilih
+  const updateSelectedNode = (attrs: Partial<SchematicNode>) => {
+    if (!singleSelectedNodeId) return;
+    pushState({
+      ...schematic,
+      nodes: nodes.map(n => n.id === singleSelectedNodeId ? { ...n, ...attrs } : n),
+    });
+  };
+
+  // Update atribut single edge terpilih
+  const updateSelectedEdge = (attrs: Partial<SchematicEdge>) => {
+    if (!singleSelectedEdgeId) return;
+    pushState({
+      ...schematic,
+      edges: edges.map(e => e.id === singleSelectedEdgeId ? { ...e, ...attrs } : e),
+    });
+  };
+
+  // Handler klik pada node (select node atau sambung kabel)
+  const handleNodeClick = (node: SchematicNode, e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    const isCableTool =
+      activeTool === "kabel-sutm" ||
+      activeTool === "kabel-skutr" ||
+      activeTool === "kabel-existing" ||
+      activeTool === "kabel-tm" ||
+      activeTool === "kabel-tr" ||
+      activeTool === "kabel-rencana";
+
+    if (isCableTool) {
+      if (!cableStartNodeId) {
+        setCableStartNodeId(node.id);
+      } else {
+        if (cableStartNodeId === node.id) {
+          setCableStartNodeId(null);
+          return;
+        }
+
+        const startNode = nodes.find(n => n.id === cableStartNodeId);
+        const distPx = startNode ? Math.hypot(node.x - startNode.x, node.y - startNode.y) : 100;
+        const recommendedM = Math.max(10, Math.round(distPx * 0.5));
+
+        const isTR = activeTool === "kabel-skutr" || activeTool === "kabel-tr";
+        const isExist = activeTool === "kabel-existing";
+
+        const newEdgeId = `edge_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        const newEdge: SchematicEdge = {
+          id: newEdgeId,
+          type: isExist ? "kabel-existing" : (isTR ? "kabel-tr" : "kabel-tm"),
+          fromNodeId: cableStartNodeId,
+          toNodeId: node.id,
+          lengthM: recommendedM,
+          jenisJaringan: isTR ? "SKUTR" : "SUTM",
+          konduktorJenis: "AAAC/S",
+          kondukturUkuran: 70,
+        };
+
+        pushState({
+          ...schematic,
+          edges: [...edges, newEdge],
+        });
+        setCableStartNodeId(null);
+        setSelectedEdgeIds(new Set([newEdge.id]));
+        setSelectedNodeIds(new Set());
+      }
+      return;
+    }
+
+    // Toggle jika shift key ditekan, sebaliknya ganti seleksi
+    if (e.shiftKey) {
+      const next = new Set(selectedNodeIds);
+      if (next.has(node.id)) {
+        next.delete(node.id);
+      } else {
+        next.add(node.id);
+      }
+      setSelectedNodeIds(next);
+    } else {
+      setSelectedNodeIds(new Set([node.id]));
+      setSelectedEdgeIds(new Set());
+    }
+  };
+
+  // Drag node start (mendukung multi-node dragging sekaligus)
+  const handleNodeMouseDown = (node: SchematicNode, e: React.MouseEvent) => {
+    if (activeTool !== "select") return;
+    e.stopPropagation();
+
+    let nextNodes = selectedNodeIds;
+    if (!selectedNodeIds.has(node.id)) {
+      if (e.shiftKey) {
+        nextNodes = new Set([...selectedNodeIds, node.id]);
+      } else {
+        nextNodes = new Set([node.id]);
+        setSelectedEdgeIds(new Set());
+      }
+      setSelectedNodeIds(nextNodes);
+    }
+
+    setDraggingNodeId(node.id);
+    const snapshot = nodes
+      .filter(n => nextNodes.has(n.id))
+      .map(n => ({ id: n.id, x: n.x, y: n.y }));
+    setDragStartSnapshot(snapshot);
+    const coords = getCanvasCoords(e);
+    setDragStartCoords(coords);
+  };
+
+  // Mouse move on canvas (drag nodes, panning, atau rubberband selection)
+  const handleMouseMove = (e: React.MouseEvent) => {
+    // Multi-node dragging
+    if (draggingNodeId && dragStartSnapshot && dragStartCoords) {
+      const coords = getCanvasCoords(e);
+      const rawDx = coords.x - dragStartCoords.x;
+      const rawDy = coords.y - dragStartCoords.y;
+      const dx = snap(rawDx);
+      const dy = snap(rawDy);
+
+      onChange({
+        ...schematic,
+        nodes: nodes.map(n => {
+          const orig = dragStartSnapshot.find(s => s.id === n.id);
+          return orig ? { ...n, x: orig.x + dx, y: orig.y + dy } : n;
+        }),
+      });
+      return;
+    }
+
+    if (isPanning) {
+      setPan({
+        x: e.clientX - panStart.x,
+        y: e.clientY - panStart.y,
+      });
+      return;
+    }
+
+    // Active Selection drawing preview
+    if (selectionShape) {
+      const coords = getCanvasCoords(e);
+      if (selectionShape.type === "rect") {
+        setSelectionShape({ ...selectionShape, currentX: coords.x, currentY: coords.y });
+      } else if (selectionShape.type === "circle") {
+        setSelectionShape({ ...selectionShape, currentX: coords.x, currentY: coords.y });
+      } else if (selectionShape.type === "lasso") {
+        const last = selectionShape.points[selectionShape.points.length - 1];
+        if (Math.hypot(coords.x - last.x, coords.y - last.y) > 4) {
+          setSelectionShape({ ...selectionShape, points: [...selectionShape.points, coords] });
+        }
+      } else if (selectionShape.type === "polygon") {
+        setSelectionShape({ ...selectionShape, currentPoint: coords });
+      }
+    }
+  };
+
+  // Drag end: commit history jika node berpindah atau seleksi selesai
+  const handleMouseUp = () => {
+    // Multi-node drag commit
+    if (draggingNodeId && dragStartSnapshot) {
+      let hasMoved = false;
+      for (const snapNode of dragStartSnapshot) {
+        const current = nodes.find(n => n.id === snapNode.id);
+        if (current && (current.x !== snapNode.x || current.y !== snapNode.y)) {
+          hasMoved = true;
+          break;
+        }
+      }
+
+      if (hasMoved) {
+        const prevNodes = nodes.map(n => {
+          const snapNode = dragStartSnapshot.find(s => s.id === n.id);
+          return snapNode ? { ...n, x: snapNode.x, y: snapNode.y } : n;
+        });
+        setPast(prev => [...prev.slice(-49), { ...schematic, nodes: prevNodes }]);
+        setFuture([]);
+      }
+    }
+
+    setDraggingNodeId(null);
+    setDragStartSnapshot(null);
+    setDragStartCoords(null);
+    setIsPanning(false);
+
+    // Evaluasi seleksi Rectangle, Circle, atau Lasso saat mouse up
+    if (selectionShape) {
+      if (selectionShape.type === "rect") {
+        const minX = Math.min(selectionShape.startX, selectionShape.currentX);
+        const maxX = Math.max(selectionShape.startX, selectionShape.currentX);
+        const minY = Math.min(selectionShape.startY, selectionShape.currentY);
+        const maxY = Math.max(selectionShape.startY, selectionShape.currentY);
+
+        if (Math.abs(maxX - minX) > 4 || Math.abs(maxY - minY) > 4) {
+          const hitNodes = nodes.filter(n => isPointInRect(n, minX, maxX, minY, maxY)).map(n => n.id);
+          const hitEdges = edges.filter(e => {
+            const fn = nodes.find(n => n.id === e.fromNodeId);
+            const tn = nodes.find(n => n.id === e.toNodeId);
+            return fn && tn && isLineInRect(fn, tn, minX, maxX, minY, maxY);
+          }).map(e => e.id);
+
+          setSelectedNodeIds(new Set(hitNodes));
+          setSelectedEdgeIds(new Set(hitEdges));
+        }
+        setSelectionShape(null);
+      } else if (selectionShape.type === "circle") {
+        const r = Math.hypot(selectionShape.currentX - selectionShape.cx, selectionShape.currentY - selectionShape.cy);
+        if (r > 4) {
+          const hitNodes = nodes.filter(n => isPointInCircle(n, selectionShape.cx, selectionShape.cy, r)).map(n => n.id);
+          const hitEdges = edges.filter(e => {
+            const fn = nodes.find(n => n.id === e.fromNodeId);
+            const tn = nodes.find(n => n.id === e.toNodeId);
+            return fn && tn && isLineInCircle(fn, tn, selectionShape.cx, selectionShape.cy, r);
+          }).map(e => e.id);
+
+          setSelectedNodeIds(new Set(hitNodes));
+          setSelectedEdgeIds(new Set(hitEdges));
+        }
+        setSelectionShape(null);
+      } else if (selectionShape.type === "lasso") {
+        if (selectionShape.points.length >= 3) {
+          const hitNodes = nodes.filter(n => pointInPolygon(n, selectionShape.points)).map(n => n.id);
+          const hitEdges = edges.filter(e => {
+            const fn = nodes.find(n => n.id === e.fromNodeId);
+            const tn = nodes.find(n => n.id === e.toNodeId);
+            return fn && tn && isLineInPolygon(fn, tn, selectionShape.points);
+          }).map(e => e.id);
+
+          setSelectedNodeIds(new Set(hitNodes));
+          setSelectedEdgeIds(new Set(hitEdges));
+        }
+        setSelectionShape(null);
+      }
+    }
+  };
+
+  // Mouse down pada canvas untuk memulai shape seleksi
+  const handleCanvasMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 1 || e.altKey) {
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+      return;
+    }
+
+    const coords = getCanvasCoords(e);
+
+    if (activeTool === "select-rect") {
+      setSelectionShape({
+        type: "rect",
+        startX: coords.x,
+        startY: coords.y,
+        currentX: coords.x,
+        currentY: coords.y,
+      });
+    } else if (activeTool === "select-circle") {
+      setSelectionShape({
+        type: "circle",
+        cx: coords.x,
+        cy: coords.y,
+        currentX: coords.x,
+        currentY: coords.y,
+      });
+    } else if (activeTool === "select-lasso") {
+      setSelectionShape({
+        type: "lasso",
+        points: [coords],
+      });
+    }
+  };
+
+  // Handler klik pada kanvas (tambah node, clear selection, atau polygon vertex)
   const handleCanvasClick = (e: React.MouseEvent) => {
     if (isPanning) return;
 
-    if (activeTool === "select") {
-      setSelectedNodeId(null);
-      setSelectedEdgeId(null);
+    const coords = getCanvasCoords(e);
+
+    // Mode Polygon: klik tiap sudut, klik dekat titik awal untuk menutup
+    if (activeTool === "select-polygon") {
+      if (!selectionShape || selectionShape.type !== "polygon") {
+        setSelectionShape({
+          type: "polygon",
+          points: [coords],
+          currentPoint: coords,
+        });
+      } else {
+        const first = selectionShape.points[0];
+        const dist = Math.hypot(coords.x - first.x, coords.y - first.y);
+        if (dist < 15 && selectionShape.points.length >= 3) {
+          completePolygonSelection(selectionShape.points);
+        } else {
+          setSelectionShape({
+            type: "polygon",
+            points: [...selectionShape.points, coords],
+            currentPoint: coords,
+          });
+        }
+      }
+      return;
+    }
+
+    // Jika mode select pointer / tool seleksi lainnya diklik tanpa drag, bersihkan seleksi
+    if (activeTool === "select" || activeTool === "select-rect" || activeTool === "select-circle" || activeTool === "select-lasso") {
+      setSelectedNodeIds(new Set());
+      setSelectedEdgeIds(new Set());
       setCableStartNodeId(null);
       return;
     }
 
-    // Jika tool adalah kabel, klik pada kanvas kosong membatalkan penarikan kabel
+    // Jika tool kabel, klik kanvas kosong membatalkan penarikan kabel
     const isCableTool =
       activeTool === "kabel-sutm" ||
       activeTool === "kabel-skutr" ||
@@ -246,9 +766,8 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
     }
 
     // Tambah node baru
-    const { x, y } = getCanvasCoords(e);
-    const snappedX = snap(x);
-    const snappedY = snap(y);
+    const snappedX = snap(coords.x);
+    const snappedY = snap(coords.y);
 
     const newNodeId = `node_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     let newNode: SchematicNode;
@@ -363,153 +882,17 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
       ...schematic,
       nodes: [...nodes, newNode],
     });
-    setSelectedNodeId(newNodeId);
+    setSelectedNodeIds(new Set([newNodeId]));
+    setSelectedEdgeIds(new Set());
   };
 
-  // Handler klik pada node (select node atau sambung kabel)
-  const handleNodeClick = (node: SchematicNode, e: React.MouseEvent) => {
-    e.stopPropagation();
-
-    const isCableTool =
-      activeTool === "kabel-sutm" ||
-      activeTool === "kabel-skutr" ||
-      activeTool === "kabel-existing" ||
-      activeTool === "kabel-tm" ||
-      activeTool === "kabel-tr" ||
-      activeTool === "kabel-rencana";
-
-    if (isCableTool) {
-      if (!cableStartNodeId) {
-        // Klik node asal
-        setCableStartNodeId(node.id);
-      } else {
-        // Klik node tujuan
-        if (cableStartNodeId === node.id) {
-          setCableStartNodeId(null);
-          return;
-        }
-
-        const startNode = nodes.find(n => n.id === cableStartNodeId);
-        const distPx = startNode ? Math.hypot(node.x - startNode.x, node.y - startNode.y) : 100;
-        const recommendedM = Math.max(10, Math.round(distPx * 0.5));
-
-        const isTR = activeTool === "kabel-skutr" || activeTool === "kabel-tr";
-        const isExist = activeTool === "kabel-existing";
-
-        const newEdgeId = `edge_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-        const newEdge: SchematicEdge = {
-          id: newEdgeId,
-          type: isExist ? "kabel-existing" : (isTR ? "kabel-tr" : "kabel-tm"),
-          fromNodeId: cableStartNodeId,
-          toNodeId: node.id,
-          lengthM: recommendedM,
-          jenisJaringan: isTR ? "SKUTR" : "SUTM",
-          konduktorJenis: "AAAC/S",
-          kondukturUkuran: 70,
-        };
-
-        pushState({
-          ...schematic,
-          edges: [...edges, newEdge],
-        });
-        setCableStartNodeId(null);
-        setSelectedEdgeId(newEdge.id);
-      }
-      return;
-    }
-
-    setSelectedNodeId(node.id);
-    setSelectedEdgeId(null);
-  };
-
-  // Drag node start
-  const handleNodeMouseDown = (node: SchematicNode, e: React.MouseEvent) => {
-    if (activeTool !== "select") return;
-    e.stopPropagation();
-    setDraggingNodeId(node.id);
-    setDragStartSnapshot({ id: node.id, x: node.x, y: node.y });
-    const coords = getCanvasCoords(e);
-    setDragOffset({ x: coords.x - node.x, y: coords.y - node.y });
-  };
-
-  // Mouse move on canvas (drag node atau panning)
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (draggingNodeId) {
-      const coords = getCanvasCoords(e);
-      const newX = snap(coords.x - dragOffset.x);
-      const newY = snap(coords.y - dragOffset.y);
-
-      onChange({
-        ...schematic,
-        nodes: nodes.map(n => n.id === draggingNodeId ? { ...n, x: newX, y: newY } : n),
-      });
-      return;
-    }
-
-    if (isPanning) {
-      setPan({
-        x: e.clientX - panStart.x,
-        y: e.clientY - panStart.y,
-      });
+  // Handler klik ganda pada canvas untuk menyelesaikan polygon
+  const handleCanvasDoubleClick = (e: React.MouseEvent) => {
+    if (activeTool === "select-polygon" && selectionShape?.type === "polygon") {
+      e.stopPropagation();
+      completePolygonSelection(selectionShape.points);
     }
   };
-
-  // Drag end: commit history jika node berpindah
-  const handleMouseUp = () => {
-    if (draggingNodeId && dragStartSnapshot) {
-      const currentNode = nodes.find(n => n.id === draggingNodeId);
-      if (currentNode && (currentNode.x !== dragStartSnapshot.x || currentNode.y !== dragStartSnapshot.y)) {
-        const previousSchematic: SchematicData = {
-          ...schematic,
-          nodes: nodes.map(n => n.id === dragStartSnapshot.id ? { ...n, x: dragStartSnapshot.x, y: dragStartSnapshot.y } : n),
-        };
-        setPast(prev => [...prev.slice(-49), previousSchematic]);
-        setFuture([]);
-      }
-    }
-    setDraggingNodeId(null);
-    setDragStartSnapshot(null);
-    setIsPanning(false);
-  };
-
-  // Hapus elemen terpilih
-  const handleDeleteSelected = useCallback(() => {
-    if (selectedNodeId) {
-      pushState({
-        ...schematic,
-        nodes: nodes.filter(n => n.id !== selectedNodeId),
-        edges: edges.filter(e => e.fromNodeId !== selectedNodeId && e.toNodeId !== selectedNodeId),
-      });
-      setSelectedNodeId(null);
-    } else if (selectedEdgeId) {
-      pushState({
-        ...schematic,
-        edges: edges.filter(e => e.id !== selectedEdgeId),
-      });
-      setSelectedEdgeId(null);
-    }
-  }, [selectedNodeId, selectedEdgeId, nodes, edges, schematic, pushState]);
-
-  // Update atribut node terpilih
-  const updateSelectedNode = (attrs: Partial<SchematicNode>) => {
-    if (!selectedNodeId) return;
-    pushState({
-      ...schematic,
-      nodes: nodes.map(n => n.id === selectedNodeId ? { ...n, ...attrs } : n),
-    });
-  };
-
-  // Update atribut edge terpilih
-  const updateSelectedEdge = (attrs: Partial<SchematicEdge>) => {
-    if (!selectedEdgeId) return;
-    pushState({
-      ...schematic,
-      edges: edges.map(e => e.id === selectedEdgeId ? { ...e, ...attrs } : e),
-    });
-  };
-
-  const selectedNode = nodes.find(n => n.id === selectedNodeId);
-  const selectedEdge = edges.find(e => e.id === selectedEdgeId);
 
   return (
     <div className="flex flex-col h-full w-full bg-white select-none">
@@ -518,19 +901,83 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
         <div className="bg-slate-900 border-b border-slate-800 p-2 flex items-center justify-between gap-2 z-10 flex-wrap">
           {/* Tool Palette */}
           <div className="flex items-center gap-1.5 flex-wrap">
-            {/* Tool Pointer */}
-            <button
-              onClick={() => { setActiveTool("select"); setCableStartNodeId(null); }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                activeTool === "select"
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-              }`}
-              title="Pilih & Pindah Simbol (Klik & Geser)"
-            >
-              <span>👆</span>
-              <span>Pilih</span>
-            </button>
+            {/* ── Group Tool Seleksi Multi (ArcGIS style) ── */}
+            <div className="flex items-center bg-slate-800/90 rounded-lg p-0.5 border border-slate-700">
+              <button
+                onClick={() => { setActiveTool("select"); setCableStartNodeId(null); setSelectionShape(null); }}
+                className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition cursor-pointer ${
+                  activeTool === "select" ? "bg-blue-600 text-white shadow-xs" : "text-slate-300 hover:text-white"
+                }`}
+                title="Pilih & Pindah Simbol (Klik & Geser)"
+              >
+                <span>👆</span>
+                <span className="hidden xl:inline">Pilih</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTool("select-rect"); setCableStartNodeId(null); setSelectionShape(null); }}
+                className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition cursor-pointer ${
+                  activeTool === "select-rect" ? "bg-cyan-600 text-white shadow-xs" : "text-slate-300 hover:text-white"
+                }`}
+                title="Rectangle Select: Klik & drag membentuk kotak seleksi"
+              >
+                <span>⬚</span>
+                <span className="hidden xl:inline">Kotak</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTool("select-polygon"); setCableStartNodeId(null); setSelectionShape(null); }}
+                className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition cursor-pointer ${
+                  activeTool === "select-polygon" ? "bg-cyan-600 text-white shadow-xs" : "text-slate-300 hover:text-white"
+                }`}
+                title="Polygon Select: Klik beberapa titik, klik ganda atau Enter untuk menutup"
+              >
+                <span>⬡</span>
+                <span className="hidden xl:inline">Poligon</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTool("select-lasso"); setCableStartNodeId(null); setSelectionShape(null); }}
+                className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition cursor-pointer ${
+                  activeTool === "select-lasso" ? "bg-cyan-600 text-white shadow-xs" : "text-slate-300 hover:text-white"
+                }`}
+                title="Lasso Select: Klik tahan dan gerakkan bebas (freehand)"
+              >
+                <span>➰</span>
+                <span className="hidden xl:inline">Lasso</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTool("select-circle"); setCableStartNodeId(null); setSelectionShape(null); }}
+                className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition cursor-pointer ${
+                  activeTool === "select-circle" ? "bg-cyan-600 text-white shadow-xs" : "text-slate-300 hover:text-white"
+                }`}
+                title="Circle Select: Klik titik pusat dan drag untuk radius lingkaran"
+              >
+                <span>◯</span>
+                <span className="hidden xl:inline">Lingkaran</span>
+              </button>
+            </div>
+
+            {/* Tombol Select All & Clear */}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleSelectAll}
+                className="px-2 py-1 rounded text-xs font-bold bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 border border-slate-700 transition cursor-pointer"
+                title="Pilih Semua Item (Ctrl+A)"
+              >
+                Semua
+              </button>
+              {totalSelectedCount > 0 && (
+                <button
+                  onClick={handleClearSelection}
+                  className="px-2 py-1 rounded text-xs font-bold bg-slate-800 text-amber-400 hover:text-amber-300 hover:bg-slate-700 border border-slate-700 transition cursor-pointer"
+                  title="Batal Seleksi (Esc)"
+                >
+                  Batal
+                </button>
+              )}
+            </div>
 
             <div className="h-5 w-px bg-slate-700 mx-1" />
 
@@ -817,28 +1264,123 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
       <div className="flex-1 flex flex-col relative overflow-hidden bg-slate-100">
         <div
           className="flex-1 w-full h-full relative overflow-hidden cursor-crosshair"
-          onMouseDown={(e) => {
-            if (e.button === 1 || e.altKey) {
-              setIsPanning(true);
-              setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-            }
-          }}
+          onMouseDown={handleCanvasMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onClick={handleCanvasClick}
+          onDoubleClick={handleCanvasDoubleClick}
         >
           {/* Petunjuk aktif */}
           {!isPrinting && (
-            <div className="absolute top-2 left-2 z-10 pointer-events-none bg-slate-900/80 backdrop-blur-xs text-white text-[11px] px-2.5 py-1 rounded shadow border border-slate-700/60 font-medium">
+            <div className="absolute top-2 left-2 z-10 pointer-events-none bg-slate-900/85 backdrop-blur-xs text-white text-[11px] px-2.5 py-1 rounded-lg shadow border border-slate-700/60 font-medium max-w-md">
               {cableStartNodeId ? (
                 <span className="text-amber-300 font-bold animate-pulse">
                   ⚡ Klik tiang/gardu tujuan untuk menyambungkan kabel...
                 </span>
+              ) : activeTool === "select-rect" ? (
+                <span className="text-cyan-300 font-semibold">
+                  ⬚ Mode Kotak: Klik & seret untuk memilih area kotak persegi.
+                </span>
+              ) : activeTool === "select-polygon" ? (
+                <span className="text-cyan-300 font-semibold">
+                  ⬡ Mode Poligon: Klik titik-titik sudut. Klik titik awal, dobel-klik, atau tekan [Enter] untuk menutup area.
+                </span>
+              ) : activeTool === "select-lasso" ? (
+                <span className="text-cyan-300 font-semibold">
+                  ➰ Mode Lasso: Klik tahan & gerakkan bebas mengelilingi simbol dan kabel yang ingin dipilih.
+                </span>
+              ) : activeTool === "select-circle" ? (
+                <span className="text-cyan-300 font-semibold">
+                  ◯ Mode Lingkaran: Klik titik pusat dan seret keluar untuk menentukan radius seleksi.
+                </span>
               ) : activeTool === "select" ? (
-                <span>Mode Pilih: Klik simbol untuk geser atau edit atribut. [Ctrl+Z]: Undo, [Del]: Hapus.</span>
+                <span>
+                  Mode Pilih: Klik simbol/kabel untuk pilih. Tekan [Shift] untuk multi-pilih. [Del]: Hapus, [Ctrl+A]: Semua.
+                </span>
               ) : (
                 <span>Mode Tambah: Klik di area gambar untuk meletakkan simbol.</span>
               )}
+            </div>
+          )}
+
+          {/* ─── Floating Selection Info & Action Panel ─── */}
+          {!isPrinting && totalSelectedCount > 0 && (
+            <div className="absolute top-3 right-3 z-20 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-xl p-3 shadow-2xl text-white max-w-sm w-80 animate-in fade-in slide-in-from-top-2">
+              {/* Header */}
+              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" />
+                  <span className="font-extrabold text-xs text-cyan-300 uppercase tracking-wide">
+                    {totalSelectedCount} Item Terpilih
+                  </span>
+                </div>
+                <button
+                  onClick={handleClearSelection}
+                  className="text-slate-400 hover:text-white text-xs font-bold px-1.5 py-0.5 rounded hover:bg-slate-800 transition cursor-pointer"
+                  title="Batal Seleksi (Esc)"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Breakdown Badges */}
+              <div className="flex items-center gap-1.5 flex-wrap py-2 border-b border-slate-800/80 text-[11px]">
+                {breakdown.tiangCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40">
+                    {breakdown.tiangCount} Tiang
+                  </span>
+                )}
+                {breakdown.garduCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-bold border border-purple-500/40">
+                    {breakdown.garduCount} Gardu
+                  </span>
+                )}
+                {breakdown.schoorCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 font-bold border border-red-500/40">
+                    {breakdown.schoorCount} Penopang
+                  </span>
+                )}
+                {breakdown.boxCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/40">
+                    {breakdown.boxCount} Box APP
+                  </span>
+                )}
+                {breakdown.cableCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-bold border border-blue-500/40">
+                    {breakdown.cableCount} Kabel ({breakdown.cableTotalM} m)
+                  </span>
+                )}
+              </div>
+
+              {/* Subset RAB Estimation */}
+              <div className="py-2.5 flex items-center justify-between bg-slate-950/70 rounded-lg px-2.5 my-2 border border-slate-800">
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-slate-400 font-medium">Estimasi RAB Terpilih:</span>
+                  <span className="text-sm font-black text-emerald-400 font-mono tracking-tight">
+                    {formatRupiah(selectedRabTotal)}
+                  </span>
+                </div>
+                <span className="text-xl">📊</span>
+              </div>
+
+              {/* Bulk Actions Buttons */}
+              <div className="flex items-center gap-1.5 pt-1">
+                <button
+                  onClick={() => setIsBulkEditOpen(true)}
+                  className="flex-1 py-1.5 px-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-sm"
+                >
+                  <span>✏️</span>
+                  <span>Edit Massal</span>
+                </button>
+                <button
+                  onClick={() => setIsConfirmDeleteOpen(true)}
+                  className="py-1.5 px-3 bg-red-600/90 hover:bg-red-600 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-sm"
+                  title="Hapus Terpilih (Del)"
+                >
+                  <span>🗑️</span>
+                  <span>Hapus</span>
+                </button>
+              </div>
             </div>
           )}
 
@@ -875,11 +1417,11 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                 const toNode = nodes.find(n => n.id === edge.toNodeId);
                 if (!fromNode || !toNode) return null;
 
-                const isSelected = selectedEdgeId === edge.id;
+                const isSelected = selectedEdgeIds.has(edge.id);
                 const isExist = edge.type === "kabel-existing";
                 const cableStyle = getCableStyle(edge.jenisJaringan || "SUTM", isExist);
 
-                const strokeColor = isSelected ? SPARK_ASSET_COLORS.POLE.selectedHalo : cableStyle.stroke;
+                const strokeColor = isSelected ? "#0284c7" : cableStyle.stroke;
                 const strokeWidth = isSelected ? 4.5 : cableStyle.strokeWidth;
                 const strokeDasharray = cableStyle.strokeDasharray;
 
@@ -891,8 +1433,18 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                     key={edge.id}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setSelectedEdgeId(edge.id);
-                      setSelectedNodeId(null);
+                      if (e.shiftKey) {
+                        const next = new Set(selectedEdgeIds);
+                        if (next.has(edge.id)) {
+                          next.delete(edge.id);
+                        } else {
+                          next.add(edge.id);
+                        }
+                        setSelectedEdgeIds(next);
+                      } else {
+                        setSelectedEdgeIds(new Set([edge.id]));
+                        setSelectedNodeIds(new Set());
+                      }
                     }}
                     className="cursor-pointer group"
                   >
@@ -905,6 +1457,20 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                       stroke="transparent"
                       strokeWidth={18}
                     />
+
+                    {/* Outer Glow Outline for Selected Cable */}
+                    {isSelected && (
+                      <line
+                        x1={fromNode.x}
+                        y1={fromNode.y}
+                        x2={toNode.x}
+                        y2={toNode.y}
+                        stroke="#38bdf8"
+                        strokeWidth={7}
+                        opacity={0.6}
+                        strokeLinecap="round"
+                      />
+                    )}
 
                     {/* Visible Cable Line */}
                     <line
@@ -927,8 +1493,8 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                         height={15}
                         rx={4}
                         fill="white"
-                        stroke={isSelected ? SPARK_ASSET_COLORS.POLE.selectedHalo : "#CBD5E1"}
-                        strokeWidth={1}
+                        stroke={isSelected ? "#0284c7" : "#CBD5E1"}
+                        strokeWidth={isSelected ? 1.8 : 1}
                         className="shadow-xs"
                       />
                       <text
@@ -937,7 +1503,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                         textAnchor="middle"
                         fontSize="10"
                         fontWeight="900"
-                        fill="#1D4ED8"
+                        fill={isSelected ? "#0284c7" : "#1D4ED8"}
                         fontFamily="system-ui, -apple-system, sans-serif"
                         className="select-none"
                       >
@@ -950,7 +1516,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
 
               {/* ─── Render Nodes ─── */}
               {nodes.map(node => {
-                const isSelected = selectedNodeId === node.id;
+                const isSelected = selectedNodeIds.has(node.id);
                 const isCableStart = cableStartNodeId === node.id;
 
                 const isPole =
@@ -970,15 +1536,31 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                     onMouseDown={(e) => handleNodeMouseDown(node, e)}
                     className="cursor-move group select-none"
                   >
-                    {/* Selection Aura */}
+                    {/* Visual Highlight Outline / Glow */}
                     {(isSelected || isCableStart) && (
-                      <circle
-                        r={13}
-                        fill={isCableStart ? "rgba(239, 68, 68, 0.2)" : "rgba(249, 115, 22, 0.2)"}
-                        stroke={isCableStart ? "#EF4444" : SPARK_ASSET_COLORS.POLE.selectedHalo}
-                        strokeWidth={1.8}
-                        strokeDasharray="3,2"
-                      />
+                      <>
+                        <circle
+                          r={16}
+                          fill={isCableStart ? "rgba(239, 68, 68, 0.2)" : "rgba(14, 165, 233, 0.2)"}
+                          stroke={isCableStart ? "#EF4444" : "#0284c7"}
+                          strokeWidth={2}
+                          strokeDasharray={isCableStart ? "3,2" : undefined}
+                        />
+                        {/* Checkmark Badge for Selected Item */}
+                        {isSelected && (
+                          <g transform="translate(10, -10)">
+                            <circle r={6.5} fill="#0284c7" stroke="#ffffff" strokeWidth={1.5} />
+                            <path
+                              d="M-3.5 0 L-1 2.5 L3.5 -2"
+                              fill="none"
+                              stroke="#ffffff"
+                              strokeWidth={1.5}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </g>
+                        )}
+                      </>
                     )}
 
                     {/* Render Schoor jika terpasang pada tiang ini */}
@@ -1128,12 +1710,101 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                   </g>
                 );
               })}
+
+              {/* ─── Render Area Seleksi Sementara (Preview Rubberband) ─── */}
+              {selectionShape && (
+                <g className="pointer-events-none select-none">
+                  {selectionShape.type === "rect" && (
+                    <rect
+                      x={Math.min(selectionShape.startX, selectionShape.currentX)}
+                      y={Math.min(selectionShape.startY, selectionShape.currentY)}
+                      width={Math.abs(selectionShape.currentX - selectionShape.startX)}
+                      height={Math.abs(selectionShape.currentY - selectionShape.startY)}
+                      fill="rgba(2, 132, 199, 0.18)"
+                      stroke="#0284c7"
+                      strokeWidth={1.5 / zoom}
+                      strokeDasharray="4,3"
+                    />
+                  )}
+
+                  {selectionShape.type === "circle" && (
+                    <circle
+                      cx={selectionShape.cx}
+                      cy={selectionShape.cy}
+                      r={Math.hypot(selectionShape.currentX - selectionShape.cx, selectionShape.currentY - selectionShape.cy)}
+                      fill="rgba(2, 132, 199, 0.18)"
+                      stroke="#0284c7"
+                      strokeWidth={1.5 / zoom}
+                      strokeDasharray="4,3"
+                    />
+                  )}
+
+                  {selectionShape.type === "lasso" && selectionShape.points.length >= 2 && (
+                    <polygon
+                      points={selectionShape.points.map(p => `${p.x},${p.y}`).join(" ")}
+                      fill="rgba(2, 132, 199, 0.18)"
+                      stroke="#0284c7"
+                      strokeWidth={1.5 / zoom}
+                      strokeDasharray="4,3"
+                    />
+                  )}
+
+                  {selectionShape.type === "polygon" && selectionShape.points.length > 0 && (
+                    <>
+                      {/* Polygon fill preview jika sudah >= 3 titik */}
+                      {selectionShape.points.length >= 3 && (
+                        <polygon
+                          points={selectionShape.points.map(p => `${p.x},${p.y}`).join(" ")}
+                          fill="rgba(2, 132, 199, 0.14)"
+                          stroke="#0284c7"
+                          strokeWidth={1.2 / zoom}
+                          strokeDasharray="4,3"
+                        />
+                      )}
+
+                      {/* Garis segmen polygon yang sudah ditarik */}
+                      <polyline
+                        points={selectionShape.points.map(p => `${p.x},${p.y}`).join(" ")}
+                        fill="none"
+                        stroke="#0284c7"
+                        strokeWidth={1.8 / zoom}
+                      />
+
+                      {/* Garis rubberband ke posisi kursor saat ini */}
+                      {selectionShape.currentPoint && (
+                        <line
+                          x1={selectionShape.points[selectionShape.points.length - 1].x}
+                          y1={selectionShape.points[selectionShape.points.length - 1].y}
+                          x2={selectionShape.currentPoint.x}
+                          y2={selectionShape.currentPoint.y}
+                          stroke="#0284c7"
+                          strokeWidth={1.5 / zoom}
+                          strokeDasharray="3,3"
+                        />
+                      )}
+
+                      {/* Vertex Handles */}
+                      {selectionShape.points.map((pt, idx) => (
+                        <circle
+                          key={idx}
+                          cx={pt.x}
+                          cy={pt.y}
+                          r={idx === 0 ? 5 / zoom : 3.5 / zoom}
+                          fill={idx === 0 ? "#22c55e" : "#0284c7"}
+                          stroke="#ffffff"
+                          strokeWidth={1.5 / zoom}
+                        />
+                      ))}
+                    </>
+                  )}
+                </g>
+              )}
             </g>
           </svg>
         </div>
 
-        {/* ─── Bottom Property Inspector Panel ─── */}
-        {!isPrinting && (selectedNode || selectedEdge) && (
+        {/* ─── Bottom Property Inspector Panel (Single Item Selected) ─── */}
+        {!isPrinting && (selectedNode || selectedEdge) && totalSelectedCount === 1 && (
           <div className="bg-white border-t-2 border-slate-300 p-2.5 px-4 flex items-center justify-between gap-4 z-10 shadow-lg animate-in slide-in-from-bottom-2">
             {/* INSPECTOR UNTUK SIMBOL (NODE) */}
             {selectedNode && (
@@ -1376,13 +2047,13 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
 
             <div className="flex items-center gap-2 flex-shrink-0">
               <button
-                onClick={handleDeleteSelected}
+                onClick={() => setIsConfirmDeleteOpen(true)}
                 className="px-3 py-1.5 rounded-lg text-xs font-bold text-red-600 hover:bg-red-50 border border-red-200 transition cursor-pointer"
               >
                 Hapus
               </button>
               <button
-                onClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); }}
+                onClick={handleClearSelection}
                 className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 border border-slate-300 transition cursor-pointer"
               >
                 Selesai
@@ -1391,6 +2062,255 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
           </div>
         )}
       </div>
+
+      {/* ─── Modal Konfirmasi Bulk Delete ─── */}
+      {isConfirmDeleteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-slate-200 animate-in zoom-in-95">
+            <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xl mx-auto mb-3 font-bold">
+              ⚠️
+            </div>
+            <h3 className="text-base font-black text-slate-900 text-center mb-1">
+              Hapus {totalSelectedCount} Item Terpilih?
+            </h3>
+            <p className="text-xs text-slate-600 text-center mb-4 leading-relaxed">
+              {selectedNodes.length > 0 && <span>{selectedNodes.length} simbol</span>}
+              {selectedNodes.length > 0 && selectedEdges.length > 0 && <span> dan </span>}
+              {selectedEdges.length > 0 && <span>{selectedEdges.length} segmen kabel</span>}
+              {" akan dihapus dari kanvas skematik. Aksi ini dapat di-Undo (Ctrl+Z) dalam 1 langkah."}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsConfirmDeleteOpen(false)}
+                className="flex-1 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleExecuteBulkDelete}
+                className="flex-1 py-2 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition cursor-pointer shadow-md"
+              >
+                Ya, Hapus Semua
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Modal Bulk Edit Atribut ─── */}
+      {isBulkEditOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl p-5 max-w-md w-full shadow-2xl border border-slate-200 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">✏️</span>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">Edit Atribut Massal</h3>
+                  <p className="text-[11px] text-slate-500">{totalSelectedCount} item terpilih akan diperbarui sekaligus</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsBulkEditOpen(false)}
+                className="text-slate-400 hover:text-slate-700 font-bold text-sm p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Form Atribut Tiang (jika ada tiang terselect) */}
+              {breakdown.tiangCount > 0 && (
+                <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-3 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-amber-900 uppercase tracking-tight flex items-center gap-1.5">
+                      <span>🏷️</span> Atribut Tiang ({breakdown.tiangCount} item)
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Material Tiang:</label>
+                      <select
+                        value={bulkForm.materialTiang}
+                        onChange={(e) => setBulkForm({ ...bulkForm, materialTiang: e.target.value })}
+                        className="w-full px-2 py-1.5 bg-white border border-amber-300 rounded-lg text-xs font-medium outline-none"
+                      >
+                        <option value="">(Biarkan Tidak Diubah)</option>
+                        <option value="Beton">Tiang Beton</option>
+                        <option value="Baja">Tiang Baja</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Tinggi Tiang:</label>
+                      <select
+                        value={bulkForm.tinggiTiang}
+                        onChange={(e) => setBulkForm({ ...bulkForm, tinggiTiang: e.target.value })}
+                        className="w-full px-2 py-1.5 bg-white border border-amber-300 rounded-lg text-xs font-medium outline-none"
+                      >
+                        <option value="">(Biarkan Tidak Diubah)</option>
+                        <option value="9">9 Meter (JTR Standar)</option>
+                        <option value="11">11 Meter</option>
+                        <option value="12">12 Meter (JTM Standar)</option>
+                        <option value="13">13 Meter</option>
+                        <option value="14">14 Meter (JTM Trafo)</option>
+                        <option value="7">7 Meter</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Kekuatan (daN):</label>
+                      <select
+                        value={bulkForm.kekuatanTiang}
+                        onChange={(e) => setBulkForm({ ...bulkForm, kekuatanTiang: e.target.value })}
+                        className="w-full px-2 py-1.5 bg-white border border-amber-300 rounded-lg text-xs font-medium outline-none"
+                      >
+                        <option value="">(Biarkan Tidak Diubah)</option>
+                        <option value="200">200 daN (Tumpu)</option>
+                        <option value="350">350 daN (Sudut/Trafo)</option>
+                        <option value="100">100 daN</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Posisi Tiang:</label>
+                      <select
+                        value={bulkForm.posisiTiang}
+                        onChange={(e) => setBulkForm({ ...bulkForm, posisiTiang: e.target.value })}
+                        className="w-full px-2 py-1.5 bg-white border border-amber-300 rounded-lg text-xs font-medium outline-none"
+                      >
+                        <option value="">(Biarkan Tidak Diubah)</option>
+                        <option value="Tumpu">Tumpu</option>
+                        <option value="Sudut">Sudut</option>
+                        <option value="Awal">Awal</option>
+                        <option value="Akhir">Akhir</option>
+                        <option value="Penegang">Penegang</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Form Atribut Gardu (jika ada gardu terselect) */}
+              {breakdown.garduCount > 0 && (
+                <div className="bg-purple-50/70 border border-purple-200/80 rounded-xl p-3 space-y-2.5">
+                  <span className="text-xs font-black text-purple-900 uppercase tracking-tight flex items-center gap-1.5">
+                    <span>⚡</span> Atribut Gardu ({breakdown.garduCount} item)
+                  </span>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Jenis Gardu:</label>
+                      <select
+                        value={bulkForm.garduJenis}
+                        onChange={(e) => setBulkForm({ ...bulkForm, garduJenis: e.target.value })}
+                        className="w-full px-2 py-1.5 bg-white border border-purple-300 rounded-lg text-xs font-medium outline-none"
+                      >
+                        <option value="">(Biarkan Tidak Diubah)</option>
+                        <option value="Portal">Portal (2 Tiang)</option>
+                        <option value="Cantol">Cantol (1 Tiang)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Kapasitas Trafo:</label>
+                      <select
+                        value={bulkForm.trafoKva}
+                        onChange={(e) => setBulkForm({ ...bulkForm, trafoKva: e.target.value })}
+                        className="w-full px-2 py-1.5 bg-white border border-purple-300 rounded-lg text-xs font-medium outline-none"
+                      >
+                        <option value="">(Biarkan Tidak Diubah)</option>
+                        <option value="25">25 kVA</option>
+                        <option value="50">50 kVA</option>
+                        <option value="100">100 kVA (Standar)</option>
+                        <option value="160">160 kVA</option>
+                        <option value="200">200 kVA</option>
+                        <option value="250">250 kVA</option>
+                        <option value="400">400 kVA</option>
+                        <option value="630">630 kVA</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Form Atribut Kabel (jika ada kabel terselect) */}
+              {breakdown.cableCount > 0 && (
+                <div className="bg-blue-50/70 border border-blue-200/80 rounded-xl p-3 space-y-2.5">
+                  <span className="text-xs font-black text-blue-900 uppercase tracking-tight flex items-center gap-1.5">
+                    <span>🔌</span> Atribut Kabel ({breakdown.cableCount} segmen)
+                  </span>
+
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Jaringan:</label>
+                      <select
+                        value={bulkForm.jenisJaringan}
+                        onChange={(e) => setBulkForm({ ...bulkForm, jenisJaringan: e.target.value })}
+                        className="w-full px-2 py-1.5 bg-white border border-blue-300 rounded-lg text-xs font-medium outline-none"
+                      >
+                        <option value="">(Tidak Diubah)</option>
+                        <option value="SUTM">SUTM (Saluran Udara TM)</option>
+                        <option value="SKUTR">SKUTR (Saluran Kabel Udara TR)</option>
+                        <option value="SKUTM">SKUTM (Kabel Udara TM / MVTIC)</option>
+                        <option value="SKTM">SKTM (Kabel Tanah TM)</option>
+                        <option value="SKTR">SKTR (Kabel Tanah TR)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Konduktor:</label>
+                      <select
+                        value={bulkForm.konduktorJenis}
+                        onChange={(e) => setBulkForm({ ...bulkForm, konduktorJenis: e.target.value })}
+                        className="w-full px-2 py-1.5 bg-white border border-blue-300 rounded-lg text-xs font-medium outline-none"
+                      >
+                        <option value="">(Tidak Diubah)</option>
+                        <option value="AAAC/S">AAAC/S</option>
+                        <option value="AAAC">AAAC</option>
+                        <option value="MVTIC">MVTIC</option>
+                        <option value="NA2XSEYBY">NA2XSEYBY</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Ukuran:</label>
+                      <select
+                        value={bulkForm.kondukturUkuran}
+                        onChange={(e) => setBulkForm({ ...bulkForm, kondukturUkuran: e.target.value })}
+                        className="w-full px-2 py-1.5 bg-white border border-blue-300 rounded-lg text-xs font-medium outline-none"
+                      >
+                        <option value="">(Tidak Diubah)</option>
+                        <option value="70">70 mm²</option>
+                        <option value="150">150 mm²</option>
+                        <option value="240">240 mm²</option>
+                        <option value="50">50 mm²</option>
+                        <option value="95">95 mm²</option>
+                        <option value="120">120 mm²</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 pt-4 mt-4 border-t border-slate-200">
+              <button
+                onClick={() => setIsBulkEditOpen(false)}
+                className="flex-1 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleExecuteBulkEdit}
+                className="flex-1 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition cursor-pointer shadow-md"
+              >
+                Terapkan Perubahan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
