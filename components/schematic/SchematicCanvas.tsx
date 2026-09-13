@@ -179,6 +179,12 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
   const [past, setPast] = useState<SchematicData[]>([]);
   const [future, setFuture] = useState<SchematicData[]>([]);
 
+  // Internal Clipboard untuk Copy, Paste & Duplicate
+  const [clipboard, setClipboard] = useState<{ nodes: SchematicNode[]; edges: SchematicEdge[] } | null>(null);
+  const clipboardRef = useRef<{ nodes: SchematicNode[]; edges: SchematicEdge[] } | null>(null);
+  const pasteCountRef = useRef(1);
+  const [clipboardNotice, setClipboardNotice] = useState<string | null>(null);
+
   // Pan & Zoom
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -221,6 +227,8 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
     const newPast = past.slice(0, past.length - 1);
     setFuture(f => [schematic, ...f.slice(0, 49)]);
     setPast(newPast);
+    setSelectedNodeIds(prev => new Set(Array.from(prev).filter(id => previous.nodes.some(n => n.id === id))));
+    setSelectedEdgeIds(prev => new Set(Array.from(prev).filter(id => previous.edges.some(e => e.id === id))));
     onChange(previous);
   }, [past, schematic, onChange]);
 
@@ -231,6 +239,8 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
     const newFuture = future.slice(1);
     setPast(p => [...p.slice(-49), schematic]);
     setFuture(newFuture);
+    setSelectedNodeIds(prev => new Set(Array.from(prev).filter(id => next.nodes.some(n => n.id === id))));
+    setSelectedEdgeIds(prev => new Set(Array.from(prev).filter(id => next.edges.some(e => e.id === id))));
     onChange(next);
   }, [future, schematic, onChange]);
 
@@ -368,7 +378,111 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
     });
   }, [nodes, edges, selectedNodeIds, selectedEdgeIds, bulkForm, schematic, pushState]);
 
-  // Global Keyboard Shortcuts (Undo/Redo, Delete, Escape, Ctrl+A, Enter)
+  // ─── Copy Selection (Ctrl+C) ───
+  const handleCopy = useCallback(() => {
+    if (selectedNodeIds.size === 0) return;
+
+    // Ambil node yang terselect dengan semua atribut lengkap
+    const nodesToCopy = nodes
+      .filter(n => selectedNodeIds.has(n.id))
+      .map(n => ({ ...n }));
+
+    const copiedNodeIdSet = new Set(nodesToCopy.map(n => n.id));
+
+    // Untuk kabel/edge: HANYA include yang KEDUA ujungnya sama-sama terselect
+    const edgesToCopy = edges
+      .filter(e => copiedNodeIdSet.has(e.fromNodeId) && copiedNodeIdSet.has(e.toNodeId))
+      .map(e => ({ ...e }));
+
+    if (nodesToCopy.length === 0) return;
+
+    const data = { nodes: nodesToCopy, edges: edgesToCopy };
+    clipboardRef.current = data;
+    setClipboard(data);
+    pasteCountRef.current = 1;
+
+    setClipboardNotice(`${nodesToCopy.length} item disalin`);
+    setTimeout(() => setClipboardNotice(null), 1800);
+  }, [nodes, edges, selectedNodeIds]);
+
+  // ─── Paste Selection (Ctrl+V) ───
+  const handlePaste = useCallback((customData?: { nodes: SchematicNode[]; edges: SchematicEdge[] }) => {
+    const source = customData || clipboardRef.current;
+    if (!source || source.nodes.length === 0) return;
+
+    const baseOffset = snapGrid ? 40 : 30;
+    const offsetDistance = baseOffset * pasteCountRef.current;
+    pasteCountRef.current += 1;
+
+    // Mapping ID lama -> baru
+    const oldToNewNodeIdMap = new Map<string, string>();
+
+    const newNodes: SchematicNode[] = source.nodes.map(node => {
+      const newId = `node_${Date.now()}_${Math.random().toString(36).substring(2, 6)}_${Math.random().toString(36).substring(2, 4)}`;
+      oldToNewNodeIdMap.set(node.id, newId);
+
+      const newX = snap(node.x + offsetDistance);
+      const newY = snap(node.y + offsetDistance);
+
+      return {
+        ...node,
+        id: newId,
+        x: newX,
+        y: newY,
+      };
+    });
+
+    const newEdges: SchematicEdge[] = source.edges
+      .filter(edge => oldToNewNodeIdMap.has(edge.fromNodeId) && oldToNewNodeIdMap.has(edge.toNodeId))
+      .map(edge => {
+        const newEdgeId = `edge_${Date.now()}_${Math.random().toString(36).substring(2, 6)}_${Math.random().toString(36).substring(2, 4)}`;
+        return {
+          ...edge,
+          id: newEdgeId,
+          fromNodeId: oldToNewNodeIdMap.get(edge.fromNodeId)!,
+          toNodeId: oldToNewNodeIdMap.get(edge.toNodeId)!,
+        };
+      });
+
+    // 1 langkah history undo untuk seluruh item hasil paste
+    pushState({
+      ...schematic,
+      nodes: [...nodes, ...newNodes],
+      edges: [...edges, ...newEdges],
+    });
+
+    // Otomatis pilih item-item hasil paste
+    setSelectedNodeIds(new Set(newNodes.map(n => n.id)));
+    setSelectedEdgeIds(new Set(newEdges.map(e => e.id)));
+
+    setClipboardNotice(`${newNodes.length} item ditempel`);
+    setTimeout(() => setClipboardNotice(null), 1800);
+  }, [schematic, nodes, edges, pushState, snap, snapGrid]);
+
+  // ─── Duplicate (Ctrl+D: Copy + Paste dalam 1 langkah) ───
+  const handleDuplicate = useCallback(() => {
+    if (selectedNodeIds.size === 0) return;
+
+    const nodesToCopy = nodes
+      .filter(n => selectedNodeIds.has(n.id))
+      .map(n => ({ ...n }));
+
+    const copiedNodeIdSet = new Set(nodesToCopy.map(n => n.id));
+
+    const edgesToCopy = edges
+      .filter(e => copiedNodeIdSet.has(e.fromNodeId) && copiedNodeIdSet.has(e.toNodeId))
+      .map(e => ({ ...e }));
+
+    if (nodesToCopy.length === 0) return;
+
+    const data = { nodes: nodesToCopy, edges: edgesToCopy };
+    clipboardRef.current = data;
+    setClipboard(data);
+    pasteCountRef.current = 1;
+    handlePaste(data);
+  }, [nodes, edges, selectedNodeIds, handlePaste]);
+
+  // Global Keyboard Shortcuts (Undo/Redo, Copy/Paste/Duplicate, Delete, Escape, Ctrl+A, Enter)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -379,6 +493,33 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
         target.isContentEditable
       ) {
         return;
+      }
+
+      // Copy: Ctrl+C / Cmd+C
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "c") {
+        if (selectedNodeIds.size > 0) {
+          e.preventDefault();
+          handleCopy();
+          return;
+        }
+      }
+
+      // Paste: Ctrl+V / Cmd+V
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "v") {
+        if (clipboardRef.current && clipboardRef.current.nodes.length > 0) {
+          e.preventDefault();
+          handlePaste();
+          return;
+        }
+      }
+
+      // Duplicate: Ctrl+D / Cmd+D
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "d") {
+        if (selectedNodeIds.size > 0) {
+          e.preventDefault();
+          handleDuplicate();
+          return;
+        }
       }
 
       // Undo: Ctrl+Z / Cmd+Z
@@ -437,7 +578,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleUndo, handleRedo, handleSelectAll, handleClearSelection, completePolygonSelection, selectionShape, selectedNodeIds, selectedEdgeIds]);
+  }, [handleUndo, handleRedo, handleSelectAll, handleClearSelection, completePolygonSelection, handleCopy, handlePaste, handleDuplicate, selectionShape, selectedNodeIds, selectedEdgeIds]);
 
   // Single Item Selection Compatibility untuk Property Inspector di bawah
   const singleSelectedNodeId = selectedNodeIds.size === 1 && selectedEdgeIds.size === 0 ? Array.from(selectedNodeIds)[0] : null;
@@ -1305,11 +1446,19 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                 </span>
               ) : activeTool === "select" ? (
                 <span>
-                  Mode Pilih: Klik simbol/kabel untuk pilih. Tekan [Shift] untuk multi-pilih. [Del]: Hapus, [Ctrl+A]: Semua.
+                  Mode Pilih: Klik simbol/kabel untuk pilih. [Shift]: multi-pilih. [Ctrl+C]/[Ctrl+V]: Salin, [Ctrl+D]: Duplikat, [Del]: Hapus, [Ctrl+A]: Semua.
                 </span>
               ) : (
                 <span>Mode Tambah: Klik di area gambar untuk meletakkan simbol.</span>
               )}
+            </div>
+          )}
+
+          {/* Toast Notifikasi Clipboard */}
+          {clipboardNotice && (
+            <div className="absolute top-12 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 text-cyan-300 border border-cyan-500/50 px-3.5 py-1.5 rounded-full text-xs font-bold shadow-xl flex items-center gap-2 animate-in fade-in slide-in-from-top-2 pointer-events-none">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+              <span>{clipboardNotice}</span>
             </div>
           )}
 
@@ -1381,6 +1530,14 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                 >
                   <span>✏️</span>
                   <span>Edit Massal</span>
+                </button>
+                <button
+                  onClick={handleDuplicate}
+                  className="py-1.5 px-2.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-sm"
+                  title="Duplikat Terpilih (Ctrl+D)"
+                >
+                  <span>📋</span>
+                  <span>Duplikat</span>
                 </button>
                 <button
                   onClick={() => setIsConfirmDeleteOpen(true)}
