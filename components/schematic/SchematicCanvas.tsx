@@ -190,6 +190,8 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
   const GRID_SIZE = 20;
 
   const svgRef = useRef<SVGSVGElement>(null);
+  // Guard flag untuk mencegah handleCanvasClick menghapus seleksi setelah drag seleksi selesai
+  const hasSelectedJustFinishedRef = useRef(false);
 
   // Helper snap
   const snap = useCallback((val: number) => {
@@ -271,8 +273,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
       const layers = convertSchematicToRabLayers(subsetSchematic);
       const rab = calculateRabVolumes(layers);
       return rab.grandTotal;
-    } catch (err) {
-      console.error("Error calculating selected RAB:", err);
+    } catch {
       return 0;
     }
   }, [schematic, selectedNodes, selectedEdges]);
@@ -646,6 +647,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
 
           setSelectedNodeIds(new Set(hitNodes));
           setSelectedEdgeIds(new Set(hitEdges));
+          hasSelectedJustFinishedRef.current = true;
         }
         setSelectionShape(null);
       } else if (selectionShape.type === "circle") {
@@ -660,6 +662,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
 
           setSelectedNodeIds(new Set(hitNodes));
           setSelectedEdgeIds(new Set(hitEdges));
+          hasSelectedJustFinishedRef.current = true;
         }
         setSelectionShape(null);
       } else if (selectionShape.type === "lasso") {
@@ -673,6 +676,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
 
           setSelectedNodeIds(new Set(hitNodes));
           setSelectedEdgeIds(new Set(hitEdges));
+          hasSelectedJustFinishedRef.current = true;
         }
         setSelectionShape(null);
       }
@@ -716,6 +720,12 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
   // Handler klik pada kanvas (tambah node, clear selection, atau polygon vertex)
   const handleCanvasClick = (e: React.MouseEvent) => {
     if (isPanning) return;
+
+    // Abaikan klik jika baru saja menyelesaikan drag seleksi (lasso/rect/circle)
+    if (hasSelectedJustFinishedRef.current) {
+      hasSelectedJustFinishedRef.current = false;
+      return;
+    }
 
     const coords = getCanvasCoords(e);
 

@@ -118,7 +118,7 @@ export function convertSchematicToRabLayers(schematic: SchematicData): LayerInpu
     // Ada tiang / gardu / APP tapi belum ada garis kabel terhubung
     layers.push({
       id: 1,
-      label: kop.namaPekerjaan || "Skematik Rencana",
+      label: kop?.namaPekerjaan || "Skematik Rencana",
       poles: fakePoles,
       line: fakePoles,
       jenisJaringan: "SUTM",
@@ -146,7 +146,7 @@ export function convertSchematicToRabLayers(schematic: SchematicData): LayerInpu
 
       layers.push({
         id: layerIdx,
-        label: `${kop.namaPekerjaan || "Skematik"} - ${cg.jenisJaringan} ${cg.konduktorJenis} ${cg.kondukturUkuran}mm²`,
+        label: `${kop?.namaPekerjaan || "Skematik"} - ${cg.jenisJaringan} ${cg.konduktorJenis} ${cg.kondukturUkuran}mm²`,
         poles: isFirst ? fakePoles : [],
         line: isFirst ? fakePoles : [],
         jenisJaringan: cg.jenisJaringan,
