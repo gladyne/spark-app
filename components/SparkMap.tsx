@@ -433,7 +433,28 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
   const mapCenterRef = useRef<[number, number]>([-0.7893, 113.9213]);
   const { searchInput, setSearchInput, searchResults, isSearching, searchFocused, setSearchFocused,
     activeResultIdx, setActiveResultIdx, flyTarget, setFlyTarget, flyZoom,
-    handleSelectLocation, handleSearchKeyDown } = useSearch(mapCenterRef);
+    handleSelectLocation, handleSearchKeyDown, searchPin, clearSearchPin } = useSearch(mapCenterRef);
+
+  // Marker Pin gaya Google Maps untuk hasil pencarian
+  const searchPinIcon = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    return L.divIcon({
+      className: "search-pin-leaflet-icon bg-transparent border-0",
+      html: `
+        <div style="position: relative; width: 34px; height: 44px; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.35)); cursor: pointer; animation: searchPinDrop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);">
+          <svg width="34" height="44" viewBox="0 0 34 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <ellipse cx="17" cy="42" rx="6" ry="2" fill="rgba(0,0,0,0.25)" />
+            <path d="M17 1C8.163 1 1 8.163 1 17c0 10.8 14.5 24.2 15.15 24.8a1.2 1.2 0 0 0 1.7 0C18.5 41.2 33 27.8 33 17 33 8.163 25.837 1 17 1z" fill="#EA4335" stroke="#B31412" stroke-width="1.2"/>
+            <circle cx="17" cy="16" r="6" fill="#FFFFFF"/>
+            <circle cx="17" cy="16" r="3" fill="#C5221F"/>
+          </svg>
+        </div>
+      `,
+      iconSize: [34, 44],
+      iconAnchor: [17, 44],
+      popupAnchor: [0, -44],
+    });
+  }, []);
 
   // ─── Effects ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1520,6 +1541,7 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
           searchFocused={searchFocused} setSearchFocused={setSearchFocused}
           activeResultIdx={activeResultIdx} setActiveResultIdx={setActiveResultIdx}
           onSelectLocation={handleSelectLocation} onKeyDown={handleSearchKeyDown}
+          onClearSearch={clearSearchPin}
           canUndo={history.length > 0} canRedo={redoStack.length > 0}
           onUndo={handleUndo} onRedo={handleRedo}
         />
@@ -1539,6 +1561,74 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
 
           <MapClickHandler mode={mode} setMode={setMode} editMode={editMode} handleMapClickForInsert={handleMapClickForInsert} onSnapClick={handleSnapClick} />
           <MapFlyTo target={flyTarget} zoom={flyZoom} />
+
+          {/* ─── Marker Pin Hasil Pencarian (Google Maps Style) ─── */}
+          {searchPin && searchPinIcon && (
+            <Marker
+              key={`search-pin-${searchPin.lat}-${searchPin.lng}`}
+              position={[searchPin.lat, searchPin.lng]}
+              icon={searchPinIcon}
+              title={searchPin.name || searchPin.displayName}
+            >
+              <Popup offset={[0, -40]} autoPan={true}>
+                <div className="p-1 min-w-[200px] max-w-[260px] text-left">
+                  <div className="flex items-start justify-between gap-2 border-b border-gray-100 pb-1.5 mb-1.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-red-500 text-sm leading-none flex-shrink-0">📍</span>
+                      <span className="font-bold text-xs text-gray-900 leading-tight truncate">
+                        {searchPin.name || searchPin.displayName.split(",")[0]}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        clearSearchPin();
+                      }}
+                      className="text-gray-400 hover:text-red-500 w-4 h-4 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-[10px] flex-shrink-0"
+                      title="Hapus pin pencarian"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {searchPin.secondary && (
+                    <p className="text-[11px] text-gray-600 mb-2 leading-relaxed">
+                      {searchPin.secondary}
+                    </p>
+                  )}
+                  <div className="bg-gray-50 border border-gray-200 rounded px-2 py-1 text-[11px] text-gray-600 font-mono flex items-center justify-between mb-2">
+                    <span>{searchPin.lat.toFixed(6)}, {searchPin.lng.toFixed(6)}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (typeof navigator !== "undefined" && navigator.clipboard) {
+                          navigator.clipboard.writeText(`${searchPin.lat.toFixed(6)}, ${searchPin.lng.toFixed(6)}`);
+                        }
+                      }}
+                      title="Salin Koordinat"
+                      className="ml-1 text-gray-400 hover:text-blue-600 transition-colors text-xs"
+                    >
+                      📋
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-end">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        clearSearchPin();
+                      }}
+                      className="text-[10px] px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded font-semibold transition-colors flex items-center gap-1"
+                    >
+                      🗑️ Hapus Pin
+                    </button>
+                  </div>
+                </div>
+              </Popup>
+            </Marker>
+          )}
+
           <MapCenterTracker centerRef={mapCenterRef} />
 
           <SavedLayersRenderer

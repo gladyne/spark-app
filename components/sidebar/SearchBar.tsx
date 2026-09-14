@@ -12,6 +12,7 @@ interface Props {
   setActiveResultIdx: (v: number) => void;
   onSelectLocation: (lat: string | number, lon: string | number, display: string, type?: string) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  onClearSearch?: () => void;
   canUndo?: boolean;
   canRedo?: boolean;
   onUndo?: () => void;
@@ -21,7 +22,7 @@ interface Props {
 export default function SearchBar({
   searchInput, setSearchInput, searchResults, isSearching,
   searchFocused, setSearchFocused, activeResultIdx, setActiveResultIdx,
-  onSelectLocation, onKeyDown,
+  onSelectLocation, onKeyDown, onClearSearch,
   canUndo, canRedo, onUndo, onRedo,
 }: Props) {
   return (
@@ -77,8 +78,15 @@ export default function SearchBar({
               </svg>
             )}
             {searchInput && !isSearching && (
-              <button onClick={() => { setSearchInput(""); }}
-                className="w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center flex-shrink-0 transition-colors">
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchInput("");
+                  onClearSearch?.();
+                }}
+                className="w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center flex-shrink-0 transition-colors"
+                title="Hapus pencarian & pin"
+              >
                 <svg className="w-3 h-3 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                   <path d="M6 18L18 6M6 6l12 12"/>
                 </svg>

@@ -22,6 +22,15 @@ export function parseSearchResult(r: any) {
   return { mainName, secondary, icon };
 }
 
+export interface SearchPin {
+  lat: number;
+  lng: number;
+  displayName: string;
+  name: string;
+  secondary?: string;
+  type?: string;
+}
+
 export function useSearch(mapCenterRef: React.MutableRefObject<[number, number]>) {
   const [searchInput, setSearchInput] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -30,6 +39,7 @@ export function useSearch(mapCenterRef: React.MutableRefObject<[number, number]>
   const [activeResultIdx, setActiveResultIdx] = useState(-1);
   const [flyTarget, setFlyTarget] = useState<[number, number] | null>(null);
   const [flyZoom, setFlyZoom] = useState<number>(16);
+  const [searchPin, setSearchPin] = useState<SearchPin | null>(null);
 
   useEffect(() => {
     const trimmed = searchInput.trim();
@@ -73,8 +83,24 @@ export function useSearch(mapCenterRef: React.MutableRefObject<[number, number]>
   }, [searchInput]);
 
   const handleSelectLocation = (lat: string | number, lon: string | number, displayName: string, resultType?: string) => {
-    setFlyTarget([parseFloat(String(lat)), parseFloat(String(lon))]);
-    setSearchInput(displayName.split(",")[0]);
+    const latNum = parseFloat(String(lat));
+    const lonNum = parseFloat(String(lon));
+    setFlyTarget([latNum, lonNum]);
+    
+    const parts = displayName.split(",");
+    const mainName = parts[0]?.trim() || displayName;
+    const secondary = parts.slice(1, 4).map((s: string) => s.trim()).filter(Boolean).join(", ");
+
+    setSearchPin({
+      lat: latNum,
+      lng: lonNum,
+      displayName,
+      name: mainName,
+      secondary,
+      type: resultType,
+    });
+
+    setSearchInput(mainName);
     setSearchResults([]); setSearchFocused(false); setActiveResultIdx(-1);
     const t = (resultType || "").toLowerCase();
     if (t.includes("country")) setFlyZoom(6);
@@ -91,7 +117,17 @@ export function useSearch(mapCenterRef: React.MutableRefObject<[number, number]>
         const parts = searchInput.split(/[\s,]+/).filter(Boolean);
         if (parts.length >= 2) {
           const lat = parseFloat(parts[0]); const lng = parseFloat(parts[1]);
-          if (!isNaN(lat) && !isNaN(lng)) { setFlyTarget([lat, lng]); setSearchResults([]); setSearchFocused(false); return; }
+          if (!isNaN(lat) && !isNaN(lng)) {
+            setFlyTarget([lat, lng]);
+            setSearchPin({
+              lat,
+              lng,
+              displayName: `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+              name: "Titik Koordinat",
+              secondary: `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+            });
+            setSearchResults([]); setSearchFocused(false); return;
+          }
         }
         if (searchResults.length > 0) handleSelectLocation(searchResults[0].lat, searchResults[0].lon, searchResults[0].display_name, searchResults[0].type);
       }
@@ -106,10 +142,15 @@ export function useSearch(mapCenterRef: React.MutableRefObject<[number, number]>
     } else if (e.key === "Escape") { setSearchResults([]); setSearchFocused(false); }
   };
 
+  const clearSearchPin = () => {
+    setSearchPin(null);
+  };
+
   return {
     searchInput, setSearchInput, searchResults, isSearching,
     searchFocused, setSearchFocused, activeResultIdx, setActiveResultIdx,
     flyTarget, setFlyTarget, flyZoom, setFlyZoom,
     handleSelectLocation, handleSearchKeyDown,
+    searchPin, setSearchPin, clearSearchPin,
   };
 }
