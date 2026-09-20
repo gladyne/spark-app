@@ -34,6 +34,9 @@ export interface SchematicNode {
   garduJenis?: "Portal" | "Cantol";
   trafoKva?: number; // 25, 50, 100, 160, 200, 250, 400, 630, 1000
   fasa?: "1 phs" | "3 phs";
+  rotationDeg?: number; // 0-360°
+  offsetX?: number; // visual offset dari tiang/titik sambung (pixel)
+  offsetY?: number; // visual offset dari tiang/titik sambung (pixel)
 
   // Atribut Box APP (kWh Meter)
   boxKva?: number; // misal 197 kVA, 41.5 kVA

@@ -1,6 +1,12 @@
 "use client";
 import { useEffect } from "react";
 import type { GarduConfig } from "../../types/spark";
+import {
+  CANTOL_MAX_KVA,
+  getValidTrafoOptions,
+  parseKva,
+  GARDU_TRAFO_OPTIONS,
+} from "../../lib/assetStyles";
 
 interface Props {
   selectedGarduIdx: number;
@@ -11,12 +17,6 @@ interface Props {
   onSave: () => void;
   onRemove: () => void;
   onClose: () => void;
-}
-
-const CANTOL_MAX_KVA = 50;
-
-function getKva(trafoLabel: string): number {
-  return parseInt(trafoLabel.replace(/[^0-9]/g, ""), 10) || 0;
 }
 
 export default function GarduModal({
@@ -30,33 +30,45 @@ export default function GarduModal({
   onClose,
 }: Props) {
   useEffect(() => {
-    if (tempGardu.jenis === "Cantol" && getKva(tempGardu.trafo) > CANTOL_MAX_KVA) {
-      setTempGardu({ ...tempGardu, trafo: "50 kVA" });
+    if (tempGardu.jenis === "Cantol" && parseKva(tempGardu.trafo) > CANTOL_MAX_KVA) {
+      setTempGardu({ ...tempGardu, trafo: "100 kVA" });
     }
   }, [tempGardu.jenis]);
 
-  const defaultTrafoList = [
-    "25 kVA",
-    "50 kVA",
-    "100 kVA",
-    "160 kVA",
-    "200 kVA",
-    "250 kVA",
-    "400 kVA",
-    "630 kVA",
-    "1000 kVA",
-  ];
-  const activeOptions = trafoOptions && trafoOptions.length > 0 ? trafoOptions : defaultTrafoList;
+  const activeOptions = trafoOptions && trafoOptions.length > 0 ? trafoOptions : (GARDU_TRAFO_OPTIONS as unknown as string[]);
+  const filteredTrafoOptions = getValidTrafoOptions(tempGardu.jenis, activeOptions);
+  const showCantolWarning = tempGardu.jenis === "Cantol" && parseKva(tempGardu.trafo) > CANTOL_MAX_KVA;
 
-  const filteredTrafoOptions =
-    tempGardu.jenis === "Cantol"
-      ? activeOptions.filter(t => getKva(t) <= CANTOL_MAX_KVA)
-      : activeOptions;
+  const currentRot =
+    typeof tempGardu.rotationDeg === "number"
+      ? tempGardu.rotationDeg
+      : tempGardu.orientasi === "Vertikal"
+      ? 90
+      : 0;
 
-  const showCantolWarning = tempGardu.jenis === "Cantol" && getKva(tempGardu.trafo) > CANTOL_MAX_KVA;
+  const currentOffX = tempGardu.offsetX || 0;
+  const currentOffY = tempGardu.offsetY || 0;
+
+  const setRotation = (deg: number) => {
+    const normalized = ((deg % 360) + 360) % 360;
+    const isVert = normalized >= 45 && normalized < 135 || normalized >= 225 && normalized < 315;
+    setTempGardu({
+      ...tempGardu,
+      rotationDeg: normalized,
+      orientasi: isVert ? "Vertikal" : "Horizontal",
+    });
+  };
+
+  const setOffset = (dx: number, dy: number) => {
+    setTempGardu({
+      ...tempGardu,
+      offsetX: dx,
+      offsetY: dy,
+    });
+  };
 
   return (
-    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white p-5 rounded-2xl shadow-2xl z-[9999] border border-purple-200 w-84 max-w-[90vw]">
+    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white p-5 rounded-2xl shadow-2xl z-[9999] border border-purple-200 w-96 max-w-[95vw] max-h-[92vh] overflow-y-auto">
       <div className="flex items-center justify-between border-b pb-2 mb-3">
         <h3 className="font-extrabold text-purple-900 text-base flex items-center gap-1.5">
           <span>⚙️</span> Setup Gardu Distribusi
@@ -74,30 +86,21 @@ export default function GarduModal({
           onChange={e => {
             const newJenis = e.target.value as GarduConfig["jenis"];
             const newTrafo =
-              newJenis === "Cantol" && getKva(tempGardu.trafo) > CANTOL_MAX_KVA
-                ? "50 kVA"
+              newJenis === "Cantol" && parseKva(tempGardu.trafo) > CANTOL_MAX_KVA
+                ? "100 kVA"
                 : tempGardu.trafo;
             setTempGardu({ ...tempGardu, jenis: newJenis, trafo: newTrafo });
           }}
         >
-          <option value="Cantol">Gardu Cantol (1 Tiang – Maks 50 kVA)</option>
+          <option value="Cantol">Gardu Cantol (1 Tiang – s/d 100 kVA)</option>
           <option value="Portal">Gardu Portal (2 Tiang – s/d 1000 kVA)</option>
         </select>
       </div>
 
-      {tempGardu.jenis === "Cantol" && (
-        <div className="mb-3 bg-amber-50 border border-amber-300 rounded-lg px-2.5 py-1.5 flex items-start gap-1.5">
-          <span className="text-amber-500 text-xs flex-shrink-0">⚠️</span>
-          <p className="text-[10px] text-amber-800 font-semibold leading-snug">
-            Gardu Cantol dibatasi maks 50 kVA sesuai standar KHS PLN UP3 Kupang.
-          </p>
-        </div>
-      )}
-
       {showCantolWarning && (
         <div className="mb-3 bg-red-50 border border-red-400 rounded-lg px-2.5 py-1.5">
           <p className="text-[10px] text-red-700 font-bold">
-            ❌ Kapasitas {tempGardu.trafo} melebihi batas Cantol (50 kVA).
+            ❌ Kapasitas {tempGardu.trafo} melebihi batas Cantol ({CANTOL_MAX_KVA} kVA).
           </p>
         </div>
       )}
@@ -129,19 +132,159 @@ export default function GarduModal({
         </div>
       </div>
 
-      {tempGardu.jenis === "Portal" && (
-        <div className="mb-3">
-          <label className="text-xs text-gray-600 font-bold mb-1 block">Orientasi Portal:</label>
-          <select
-            className="w-full p-2 border border-gray-300 rounded-lg bg-gray-50 text-xs font-semibold focus:ring-2 focus:ring-purple-400 outline-none"
-            value={tempGardu.orientasi}
-            onChange={e => setTempGardu({ ...tempGardu, orientasi: e.target.value as GarduConfig["orientasi"] })}
-          >
-            <option value="Horizontal">Horizontal (Sejajar Rute)</option>
-            <option value="Vertikal">Vertikal (Melintang Rute)</option>
-          </select>
+      {/* ── Kontrol Rotasi Orientasi Bebas (0-360°) ── */}
+      <div className="mb-3 bg-purple-50/70 border border-purple-200 rounded-xl p-2.5 space-y-2">
+        <div className="flex items-center justify-between">
+          <label className="text-xs text-purple-900 font-bold flex items-center gap-1">
+            <span>🔄</span> Rotasi Simbol:
+          </label>
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              min={0}
+              max={360}
+              value={Math.round(currentRot)}
+              onChange={e => setRotation(parseInt(e.target.value) || 0)}
+              className="w-16 px-1.5 py-0.5 text-center text-xs font-bold border border-purple-300 rounded bg-white font-mono"
+            />
+            <span className="text-xs font-bold text-purple-700">°</span>
+          </div>
         </div>
-      )}
+
+        <input
+          type="range"
+          min={0}
+          max={360}
+          step={5}
+          value={Math.round(currentRot)}
+          onChange={e => setRotation(parseInt(e.target.value) || 0)}
+          className="w-full accent-purple-600 cursor-pointer h-1.5 bg-purple-200 rounded-lg"
+        />
+
+        <div className="grid grid-cols-4 gap-1 pt-1">
+          <button
+            type="button"
+            onClick={() => setRotation(0)}
+            className={`py-1 text-[10px] font-bold rounded border transition-colors ${
+              Math.round(currentRot) === 0
+                ? "bg-purple-600 text-white border-purple-600 shadow-xs"
+                : "bg-white text-purple-700 border-purple-200 hover:bg-purple-100"
+            }`}
+          >
+            0° Horiz
+          </button>
+          <button
+            type="button"
+            onClick={() => setRotation(90)}
+            className={`py-1 text-[10px] font-bold rounded border transition-colors ${
+              Math.round(currentRot) === 90
+                ? "bg-purple-600 text-white border-purple-600 shadow-xs"
+                : "bg-white text-purple-700 border-purple-200 hover:bg-purple-100"
+            }`}
+          >
+            90° Vert
+          </button>
+          <button
+            type="button"
+            onClick={() => setRotation(180)}
+            className={`py-1 text-[10px] font-bold rounded border transition-colors ${
+              Math.round(currentRot) === 180
+                ? "bg-purple-600 text-white border-purple-600 shadow-xs"
+                : "bg-white text-purple-700 border-purple-200 hover:bg-purple-100"
+            }`}
+          >
+            180°
+          </button>
+          <button
+            type="button"
+            onClick={() => setRotation(270)}
+            className={`py-1 text-[10px] font-bold rounded border transition-colors ${
+              Math.round(currentRot) === 270
+                ? "bg-purple-600 text-white border-purple-600 shadow-xs"
+                : "bg-white text-purple-700 border-purple-200 hover:bg-purple-100"
+            }`}
+          >
+            270°
+          </button>
+        </div>
+      </div>
+
+      {/* ── Kontrol Offset Posisi dari Tiang ── */}
+      <div className="mb-3 bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-2">
+        <div className="flex items-center justify-between">
+          <label className="text-xs text-slate-700 font-bold flex items-center gap-1">
+            <span>📐</span> Geser Posisi (Offset):
+          </label>
+          {(currentOffX !== 0 || currentOffY !== 0) && (
+            <button
+              type="button"
+              onClick={() => setOffset(0, 0)}
+              className="text-[10px] text-purple-700 hover:underline font-bold"
+            >
+              Reset ke Pusat
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded px-2 py-1">
+            <span className="text-[10px] font-bold text-slate-500">X:</span>
+            <input
+              type="number"
+              value={currentOffX}
+              onChange={e => setOffset(parseInt(e.target.value) || 0, currentOffY)}
+              className="w-full text-xs font-bold text-slate-800 outline-none font-mono"
+            />
+            <span className="text-[10px] text-slate-400">px</span>
+          </div>
+          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded px-2 py-1">
+            <span className="text-[10px] font-bold text-slate-500">Y:</span>
+            <input
+              type="number"
+              value={currentOffY}
+              onChange={e => setOffset(currentOffX, parseInt(e.target.value) || 0)}
+              className="w-full text-xs font-bold text-slate-800 outline-none font-mono"
+            />
+            <span className="text-[10px] text-slate-400">px</span>
+          </div>
+        </div>
+
+        {/* Nudge buttons */}
+        <div className="flex items-center justify-center gap-1 pt-1">
+          <button
+            type="button"
+            onClick={() => setOffset(currentOffX - 5, currentOffY)}
+            className="px-2 py-0.5 text-xs font-bold bg-white border border-slate-300 rounded hover:bg-slate-100"
+            title="Geser Kiri 5px"
+          >
+            ←
+          </button>
+          <button
+            type="button"
+            onClick={() => setOffset(currentOffX, currentOffY - 5)}
+            className="px-2 py-0.5 text-xs font-bold bg-white border border-slate-300 rounded hover:bg-slate-100"
+            title="Geser Atas 5px"
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            onClick={() => setOffset(currentOffX, currentOffY + 5)}
+            className="px-2 py-0.5 text-xs font-bold bg-white border border-slate-300 rounded hover:bg-slate-100"
+            title="Geser Bawah 5px"
+          >
+            ↓
+          </button>
+          <button
+            type="button"
+            onClick={() => setOffset(currentOffX + 5, currentOffY)}
+            className="px-2 py-0.5 text-xs font-bold bg-white border border-slate-300 rounded hover:bg-slate-100"
+            title="Geser Kanan 5px"
+          >
+            →
+          </button>
+        </div>
+      </div>
 
       <div className="flex gap-2 mt-4">
         <button

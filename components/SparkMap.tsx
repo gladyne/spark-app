@@ -118,6 +118,13 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
   const mapRef = useRef<L.Map | null>(null);
   const [startPos, setStartPos] = useState<[number, number] | null>(null);
 
+  // ─── User Geolocation & Project Tracking States ──────────────────────────
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  const userLocationRef = useRef<[number, number] | null>(null);
+  userLocationRef.current = userLocation;
+  const hasExistingAssetsRef = useRef(false);
+  const hasLoadedProjectDataRef = useRef(!projectId);
+
   // ─── Database & Auth Integration States ──────────────────────────────────
   const { data: session } = useSession();
   const [projectName, setProjectName] = useState("Memuat Project...");
@@ -128,11 +135,15 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
   useEffect(() => {
     if (!projectId) {
       setProjectName("Draft Baru");
+      hasExistingAssetsRef.current = false;
+      hasLoadedProjectDataRef.current = true;
       return;
     }
     const loadProject = async () => {
       try {
         setIsLoading(true);
+        hasLoadedProjectDataRef.current = false;
+        hasExistingAssetsRef.current = false;
         const res = await fetch(`/api/projects/${projectId}`);
         if (!res.ok) {
           alert("Gagal memuat project.");
@@ -148,8 +159,50 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
         if (data.connections) setConnections(data.connections);
         if (data.groupNames) setGroupNames(data.groupNames);
         
-        if (proj.mapCenter) {
-          setFlyTarget(proj.mapCenter);
+        // Cek apakah project memiliki data aset tersimpan
+        const allPoles: [number, number][] = [];
+        if (Array.isArray(data.savedLayers)) {
+          data.savedLayers.forEach((l: any) => {
+            if (Array.isArray(l.poles)) {
+              l.poles.forEach((p: [number, number]) => {
+                if (Array.isArray(p) && p.length === 2 && !isNaN(p[0]) && !isNaN(p[1])) {
+                  allPoles.push(p);
+                }
+              });
+            }
+          });
+        }
+
+        const hasSavedAssets = allPoles.length > 0 || 
+          Boolean(data.connections && data.connections.length > 0) || 
+          Boolean(data.junctions && data.junctions.length > 0);
+
+        if (hasSavedAssets || proj.mapCenter) {
+          hasExistingAssetsRef.current = true;
+          hasLoadedProjectDataRef.current = true;
+
+          // Jika ada tiang dan mapRef siap, auto-fit ke bounds data aset
+          if (allPoles.length > 0 && mapRef.current) {
+            mapRef.current.fitBounds(L.latLngBounds(allPoles), { padding: [50, 50], maxZoom: 18 });
+          } else if (proj.mapCenter) {
+            if (proj.mapZoom) setFlyZoom(proj.mapZoom);
+            setFlyTarget(proj.mapCenter);
+          }
+        } else {
+          // Project kosong/baru yang tersimpan di DB
+          hasExistingAssetsRef.current = false;
+          hasLoadedProjectDataRef.current = true;
+
+          // Jika GPS user sudah didapat sebelumnya, arahkan ke posisi GPS
+          if (userLocationRef.current) {
+            const p = userLocationRef.current;
+            mapCenterRef.current = p;
+            setFlyZoom(16);
+            setFlyTarget(p);
+            if (mapRef.current) {
+              mapRef.current.flyTo(p, 16, { duration: 1.5 });
+            }
+          }
         }
       } catch (e) {
         console.error(e);
@@ -201,6 +254,8 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
   const [endPos, setEndPos] = useState<[number, number] | null>(null);
   const [mode, setMode] = useState<"start" | "end" | null>(null);
   const [poles, setPoles] = useState<[number, number][]>([]);
+  const polesRef = useRef(poles);
+  polesRef.current = poles;
   const [line, setLine] = useState<[number, number][]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [rawRoute, setRawRoute] = useState<any>(null);
@@ -241,6 +296,8 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
 
   // ─── Multi-layer state ────────────────────────────────────────────────────
   const [savedLayers, setSavedLayers] = useState<NetworkLayer[]>([]);
+  const savedLayersRef = useRef(savedLayers);
+  savedLayersRef.current = savedLayers;
   const [layerCounter, setLayerCounter] = useState(1);
   const [activeEditLayerId, setActiveEditLayerId] = useState<number | null>(null);
   const [snapStart, setSnapStart] = useState<SnapInfo | null>(null);
@@ -378,6 +435,23 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
   const trafoOptions = ["25 kVA", "50 kVA", "100 kVA", "160 kVA", "200 kVA", "250 kVA", "315 kVA", "400 kVA", "630 kVA", "1000 kVA"];
   const isKabelTanah = jenisJaringan === "SKTM" || jenisJaringan === "SKTR";
   const [rotatingSchoor, setRotatingSchoor] = useState<{ poleIdx: number; cx: number; cy: number; } | null>(null);
+  const [rotatingGardu, setRotatingGardu] = useState<{ poleIdx: number; cx: number; cy: number; } | null>(null);
+  const [offsettingGardu, setOffsettingGardu] = useState<{ poleIdx: number; startX: number; startY: number; initOffX: number; initOffY: number; } | null>(null);
+
+  const handleUpdateGarduConfig = useCallback((layerId: number, poleIdx: number, updates: Partial<GarduConfig>) => {
+    setSavedLayers(prev => prev.map(l => {
+      if (l.id !== layerId) return l;
+      const cur = l.gardus[poleIdx];
+      if (!cur) return l;
+      return {
+        ...l,
+        gardus: {
+          ...l.gardus,
+          [poleIdx]: { ...cur, ...updates },
+        },
+      };
+    }));
+  }, []);
 
   // ─── Callback: buat junction topologis ────────────────────────────────────
   // hostPole = tiang yang mempertahankan koordinat (menampilkan A3 indicator)
@@ -432,7 +506,7 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
   // ─── Search hook ──────────────────────────────────────────────────────────
   const mapCenterRef = useRef<[number, number]>([-0.7893, 113.9213]);
   const { searchInput, setSearchInput, searchResults, isSearching, searchFocused, setSearchFocused,
-    activeResultIdx, setActiveResultIdx, flyTarget, setFlyTarget, flyZoom,
+    activeResultIdx, setActiveResultIdx, flyTarget, setFlyTarget, flyZoom, setFlyZoom,
     handleSelectLocation, handleSearchKeyDown, searchPin, clearSearchPin } = useSearch(mapCenterRef);
 
   // Marker Pin gaya Google Maps untuk hasil pencarian
@@ -453,6 +527,21 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
       iconSize: [34, 44],
       iconAnchor: [17, 44],
       popupAnchor: [0, -44],
+    });
+  }, []);
+
+  // Icon marker GPS posisi user saat ini (pulsing blue dot)
+  const userGpsIcon = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    return L.divIcon({
+      html: `
+        <div class="gps-pulse-marker" title="Lokasi Anda Saat Ini">
+          <div class="gps-pulse-ring"></div>
+        </div>
+      `,
+      className: "custom-gps-icon",
+      iconSize: [30, 30],
+      iconAnchor: [15, 15],
     });
   }, []);
 
@@ -538,6 +627,75 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
   }, [rotatingSchoor]);
 
   useEffect(() => {
+    if (!rotatingGardu) return;
+    if (mapRef.current) mapRef.current.dragging.disable();
+
+    const onMouseMove = (e: MouseEvent) => {
+      const dx = e.clientX - rotatingGardu.cx;
+      const dy = e.clientY - rotatingGardu.cy;
+      let rawAngle = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+      const snapped = Math.round(((rawAngle % 360) + 360) % 360 / 5) * 5 % 360;
+      const isVert = (snapped >= 45 && snapped < 135) || (snapped >= 225 && snapped < 315);
+
+      setGardus(prev => {
+        const cur = prev[rotatingGardu.poleIdx];
+        if (!cur) return prev;
+        return {
+          ...prev,
+          [rotatingGardu.poleIdx]: {
+            ...cur,
+            rotationDeg: snapped,
+            orientasi: isVert ? "Vertikal" : "Horizontal",
+          },
+        };
+      });
+    };
+
+    const onMouseUp = () => setRotatingGardu(null);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      if (mapRef.current) mapRef.current.dragging.enable();
+    };
+  }, [rotatingGardu]);
+
+  useEffect(() => {
+    if (!offsettingGardu) return;
+    if (mapRef.current) mapRef.current.dragging.disable();
+
+    const onMouseMove = (e: MouseEvent) => {
+      const dx = e.clientX - offsettingGardu.startX;
+      const dy = e.clientY - offsettingGardu.startY;
+      const newOffX = Math.round(offsettingGardu.initOffX + dx);
+      const newOffY = Math.round(offsettingGardu.initOffY + dy);
+
+      setGardus(prev => {
+        const cur = prev[offsettingGardu.poleIdx];
+        if (!cur) return prev;
+        return {
+          ...prev,
+          [offsettingGardu.poleIdx]: {
+            ...cur,
+            offsetX: newOffX,
+            offsetY: newOffY,
+          },
+        };
+      });
+    };
+
+    const onMouseUp = () => setOffsettingGardu(null);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      if (mapRef.current) mapRef.current.dragging.enable();
+    };
+  }, [offsettingGardu]);
+
+  useEffect(() => {
     if (selectedGarduIdx !== null) setTempGardu(gardus[selectedGarduIdx] || { jenis: "Cantol", orientasi: "Horizontal", trafo: "100 kVA" });
   }, [selectedGarduIdx, gardus]);
 
@@ -545,13 +703,46 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
     if (selectedSchoorIdx !== null) setTempSchoor(schoors[selectedSchoorIdx] || effectiveSchoors[selectedSchoorIdx] || { jenis: "Treck" });
   }, [selectedSchoorIdx, schoors]);
 
+  // ─── Auto-locate GPS saat mount (hanya untuk project baru/kosong) ──────────
   useEffect(() => {
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        pos => { const p: [number, number] = [pos.coords.latitude, pos.coords.longitude]; setFlyTarget(p); mapCenterRef.current = p; },
-        err => console.warn("User menolak lokasi", err.message)
-      );
-    }
+    if (typeof window === "undefined" || !("geolocation" in navigator)) return;
+
+    const handleSuccess = (pos: GeolocationPosition) => {
+      const coords: [number, number] = [pos.coords.latitude, pos.coords.longitude];
+      setUserLocation(coords);
+
+      // Auto-pan/zoom HANYA jika project baru/kosong (tanpa data aset yang ada)
+      const hasAssets = hasExistingAssetsRef.current ||
+        savedLayersRef.current.length > 0 ||
+        polesRef.current.length > 0;
+
+      if (!hasAssets && hasLoadedProjectDataRef.current) {
+        mapCenterRef.current = coords;
+        setFlyZoom(16);
+        setFlyTarget(coords);
+        if (mapRef.current) {
+          mapRef.current.flyTo(coords, 16, { duration: 1.5 });
+        }
+      }
+    };
+
+    // Panggil navigator.geolocation.getCurrentPosition()
+    // Coba enableHighAccuracy: true (timeout 5s); jika gagal timeout/unavailable, fallback ke low accuracy
+    navigator.geolocation.getCurrentPosition(
+      handleSuccess,
+      (err) => {
+        if (err.code === err.TIMEOUT || err.code === err.POSITION_UNAVAILABLE) {
+          navigator.geolocation.getCurrentPosition(
+            handleSuccess,
+            (err2) => console.warn("GPS Geolocation fallback notice:", err2.message),
+            { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+          );
+        } else {
+          console.warn("User menolak akses lokasi atau error:", err.message);
+        }
+      },
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 60000 }
+    );
   }, []);
 
   // ─── Keyboard shortcuts: Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z ─────────────────
@@ -1202,8 +1393,8 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
       else { 
         setPaletteGarduJenis(jenis); 
         setEditMode("gardu"); 
-        if (jenis === "Cantol" && parseInt(paletteGarduTrafo) > 50) {
-          setPaletteGarduTrafo("50 kVA");
+        if (jenis === "Cantol" && parseInt(paletteGarduTrafo) > 100) {
+          setPaletteGarduTrafo("100 kVA");
         }
       }
     }
@@ -1562,6 +1753,18 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
           <MapClickHandler mode={mode} setMode={setMode} editMode={editMode} handleMapClickForInsert={handleMapClickForInsert} onSnapClick={handleSnapClick} />
           <MapFlyTo target={flyTarget} zoom={flyZoom} />
 
+          {/* ─── Marker Posisi GPS Pengguna Saat Ini ─── */}
+          {userLocation && userGpsIcon && (
+            <Marker position={userLocation} icon={userGpsIcon} zIndexOffset={1000}>
+              <Popup offset={[0, -10]}>
+                <div className="text-xs font-semibold text-gray-800 flex items-center gap-1.5 p-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-sky-500 animate-pulse inline-block"></span>
+                  <span>Lokasi Anda Saat Ini</span>
+                </div>
+              </Popup>
+            </Marker>
+          )}
+
           {/* ─── Marker Pin Hasil Pencarian (Google Maps Style) ─── */}
           {searchPin && searchPinIcon && (
             <Marker
@@ -1649,6 +1852,7 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
             editMode={editMode}
             onPoleEdit={handleSavedPoleEdit}
             onEditKonstruksi={(layerId, poleIdx) => setSelectedKonstruksiSaved({ layerId, poleIdx })}
+            onUpdateGarduConfig={handleUpdateGarduConfig}
           />
 
           {/* Active network lines */}
@@ -1827,10 +2031,34 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
             return (
               <Fragment key={`pole-group-${idx}`}>
                 {segmentLabel}
-                <Marker position={pos} icon={customPoleIcon} draggable={editMode === null && !rotatingSchoor}
+                <Marker position={pos} icon={customPoleIcon} draggable={editMode === null && !rotatingSchoor && !rotatingGardu && !offsettingGardu}
                   eventHandlers={{
                     mousedown: (e) => {
                       const target = e.originalEvent.target as HTMLElement;
+                      if (target.closest('.gardu-rot-handle')) {
+                        L.DomEvent.preventDefault(e.originalEvent);
+                        L.DomEvent.stopPropagation(e.originalEvent);
+                        const rect = (e.originalEvent.target as HTMLElement).closest('.custom-pole-icon')!.getBoundingClientRect();
+                        const cx = rect.left + rect.width / 2;
+                        const cy = rect.top + rect.height / 2;
+                        commitHistory("Rotasi gardu");
+                        setRotatingGardu({ poleIdx: idx, cx, cy });
+                        return;
+                      }
+                      if (target.closest('.gardu-drag-handle')) {
+                        L.DomEvent.preventDefault(e.originalEvent);
+                        L.DomEvent.stopPropagation(e.originalEvent);
+                        commitHistory("Geser posisi gardu");
+                        const curGardu = gardus[idx];
+                        setOffsettingGardu({
+                          poleIdx: idx,
+                          startX: e.originalEvent.clientX,
+                          startY: e.originalEvent.clientY,
+                          initOffX: curGardu?.offsetX || 0,
+                          initOffY: curGardu?.offsetY || 0,
+                        });
+                        return;
+                      }
                       if (target.closest('.schoor-handle')) {
                         L.DomEvent.preventDefault(e.originalEvent);
                         L.DomEvent.stopPropagation(e.originalEvent);

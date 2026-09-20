@@ -56,28 +56,55 @@ export function buildGarduSvg(
   const strokeW = isLast ? "3" : "2";
   const gap = 6;
 
+  const rot =
+    typeof gardu.rotationDeg === "number"
+      ? gardu.rotationDeg
+      : gardu.orientasi === "Vertikal"
+      ? 90
+      : 0;
+
+  const offX = gardu.offsetX || 0;
+  const offY = gardu.offsetY || 0;
+  const hasOffset = Math.abs(offX) > 0.5 || Math.abs(offY) > 0.5;
+
+  const leaderLineHtml = hasOffset
+    ? `<svg style="position:absolute;top:0;left:0;width:${poleSize}px;height:${poleSize}px;overflow:visible;pointer-events:none;z-index:7;">
+        <line x1="${poleSize / 2}" y1="${poleSize / 2}" x2="${poleSize / 2 + offX}" y2="${poleSize / 2 + offY}" stroke="${trafoColor}" stroke-width="1.5" stroke-dasharray="3,3" opacity="0.75"/>
+        <circle cx="${poleSize / 2}" cy="${poleSize / 2}" r="3" fill="${trafoColor}" opacity="0.85"/>
+      </svg>`
+    : "";
+
   if (gardu.jenis === "Cantol") {
-    return `<div style="position:absolute;top:-${poleSize}px;left:0px;width:${poleSize}px;height:${poleSize}px;z-index:8;">
-      <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style="overflow:visible;">
-        <polygon points="50,0 100,100 0,100" fill="${trafoBg}" stroke="${trafoColor}" stroke-width="4" stroke-linejoin="round"/>
-      </svg>
+    return `${leaderLineHtml}
+    <div class="gardu-group" style="position:absolute;top:${offY}px;left:${offX}px;width:${poleSize}px;height:${poleSize}px;z-index:9;pointer-events:auto;">
+      <div style="position:absolute;top:0;left:0;width:${poleSize}px;height:${poleSize}px;transform:rotate(${rot}deg);transform-origin:${poleSize / 2}px ${poleSize / 2}px;overflow:visible;">
+        <!-- Trafo segitiga (Drag handle untuk geser) -->
+        <div class="gardu-drag-handle" title="Drag untuk geser posisi gardu (${offX}, ${offY})" style="position:absolute;top:-${poleSize}px;left:0px;width:${poleSize}px;height:${poleSize}px;z-index:8;cursor:move;">
+          <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style="overflow:visible;">
+            <polygon points="50,0 100,100 0,100" fill="${trafoBg}" stroke="${trafoColor}" stroke-width="4" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <!-- Handle rotasi gardu -->
+        <div class="gardu-rot-handle" title="Drag untuk rotasi gardu (${Math.round(rot)}°)" style="position:absolute;top:-${poleSize + 13}px;left:${poleSize / 2 - 5}px;width:10px;height:10px;background:#9333ea;border:2px solid white;border-radius:50%;cursor:grab;box-shadow:0 1px 4px rgba(0,0,0,0.5);z-index:10;"></div>
+      </div>
     </div>`;
   }
 
-  if (gardu.jenis === "Portal" && gardu.orientasi === "Horizontal") {
-    return `<div style="position:absolute;top:0px;left:-${poleSize + gap}px;width:${poleSize}px;height:${poleSize}px;border:${strokeW}px solid ${currentPoleBorder};background:white;border-radius:50%;z-index:9;box-shadow:0px 2px 4px rgba(0,0,0,0.5);"></div>
-    <div style="position:absolute;top:-${poleSize}px;left:-${poleSize + gap}px;width:${poleSize * 2 + gap}px;height:${poleSize}px;z-index:8;">
-      <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style="overflow:visible;">
-        <polygon points="50,0 100,100 0,100" fill="${trafoBg}" stroke="${trafoColor}" stroke-width="4" stroke-linejoin="round"/>
-      </svg>
-    </div>`;
-  }
-
-  // Portal Vertikal
-  return `<div style="position:absolute;top:-${poleSize + gap}px;left:0px;width:${poleSize}px;height:${poleSize}px;border:${strokeW}px solid ${currentPoleBorder};background:white;border-radius:50%;z-index:9;box-shadow:0px 2px 4px rgba(0,0,0,0.5);"></div>
-  <div style="position:absolute;top:-${poleSize + gap}px;left:${poleSize}px;width:${poleSize}px;height:${poleSize * 2 + gap}px;z-index:8;">
-    <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style="overflow:visible;">
-      <polygon points="0,0 100,50 0,100" fill="${trafoBg}" stroke="${trafoColor}" stroke-width="4" stroke-linejoin="round"/>
-    </svg>
+  // Portal: Tiang sekunder + balok trafo dengan rotasi bebas
+  const portalCenterX = -(gap / 2);
+  return `${leaderLineHtml}
+  <div class="gardu-group" style="position:absolute;top:${offY}px;left:${offX}px;width:${poleSize}px;height:${poleSize}px;z-index:9;pointer-events:auto;">
+    <div style="position:absolute;top:0;left:0;width:${poleSize}px;height:${poleSize}px;transform:rotate(${rot}deg);transform-origin:${poleSize / 2}px ${poleSize / 2}px;overflow:visible;">
+      <!-- Tiang ke-2 (Portal) -->
+      <div class="gardu-drag-handle" style="position:absolute;top:0px;left:-${poleSize + gap}px;width:${poleSize}px;height:${poleSize}px;border:${strokeW}px solid ${currentPoleBorder};background:white;border-radius:50%;z-index:9;box-shadow:0px 2px 4px rgba(0,0,0,0.5);cursor:move;" title="Drag untuk geser posisi gardu"></div>
+      <!-- Balok Trafo melintang kedua tiang -->
+      <div class="gardu-drag-handle" style="position:absolute;top:-${poleSize}px;left:-${poleSize + gap}px;width:${poleSize * 2 + gap}px;height:${poleSize}px;z-index:8;cursor:move;" title="Drag untuk geser posisi gardu (${offX}, ${offY})">
+        <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style="overflow:visible;">
+          <polygon points="50,0 100,100 0,100" fill="${trafoBg}" stroke="${trafoColor}" stroke-width="4" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <!-- Handle rotasi bebas gardu portal -->
+      <div class="gardu-rot-handle" title="Drag untuk rotasi bebas gardu portal (${Math.round(rot)}°)" style="position:absolute;top:-${poleSize + 14}px;left:${portalCenterX - 5}px;width:11px;height:11px;background:#9333ea;border:2px solid white;border-radius:50%;cursor:grab;box-shadow:0 1px 4px rgba(0,0,0,0.6);z-index:11;"></div>
+    </div>
   </div>`;
 }

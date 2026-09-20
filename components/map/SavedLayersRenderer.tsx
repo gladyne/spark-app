@@ -1,9 +1,9 @@
-﻿"use client";
+"use client";
 import { Fragment, useState, useEffect, useRef, useCallback } from "react";
 import { Marker, Popup, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
 import * as turf from "@turf/turf";
-import type { NetworkLayer, Connection, ConnectFirstState, JunctionInfo, DragSource, DragTarget } from "../../types/spark";
+import type { NetworkLayer, Connection, ConnectFirstState, JunctionInfo, DragSource, DragTarget, GarduConfig } from "../../types/spark";
 import { getLayerColor } from "../../lib/layerColors";
 import { buildSchoorSvg, buildGarduSvg } from "../../lib/svgUtils";
 
@@ -36,11 +36,16 @@ interface Props {
   editMode?: "insert" | "delete" | "gardu" | "schoor" | "konstruksi" | null;
   onPoleEdit?: (layerId: number, poleIdx: number, mode: string) => void;
   onEditKonstruksi?: (layerId: number, poleIdx: number) => void;
+  onUpdateGarduConfig?: (layerId: number, poleIdx: number, updates: Partial<GarduConfig>) => void;
 }
 
 // ─── Tipe data untuk state rotasi aktif ──────────────────────────────────────
 interface RotatingState {
   layerId: number; poleIdx: number; centerX: number; centerY: number;
+}
+
+interface OffsettingGarduState {
+  layerId: number; poleIdx: number; startX: number; startY: number; initOffX: number; initOffY: number;
 }
 
 // ─── Helper: hitung sudut bisector/tegak-lurus untuk schoor ─────────────────
@@ -72,12 +77,16 @@ export default function SavedLayersRenderer({
   startPos, endPos, snapStart, snapEnd, onLoadLayerForEdit,
   onConnected, onUpdateSchoorRotation, onUpdateSavedPole, onCreateJunction, poles,
   dragSource, dragSnapTarget, startDragConn, didDragRef,
-  highlightedLayerIds, editMode, onPoleEdit, onEditKonstruksi
+  highlightedLayerIds, editMode, onPoleEdit, onEditKonstruksi, onUpdateGarduConfig
 }: Props) {
   const map = useMap();
   const mapContainerRef = useRef<HTMLElement | null>(null);
   const [isRotating, setIsRotating] = useState(false);
   const rotatingRef = useRef<RotatingState | null>(null);
+  const [isRotatingGardu, setIsRotatingGardu] = useState(false);
+  const rotatingGarduRef = useRef<RotatingState | null>(null);
+  const [isOffsettingGardu, setIsOffsettingGardu] = useState(false);
+  const offsettingGarduRef = useRef<OffsettingGarduState | null>(null);
   const rafRef = useRef<number | null>(null);
   // ─── Pending drag-to-connect (200ms delay, cancelled by Leaflet dragstart) ───
   const pendingDragConnRef = useRef<{ layerId: number; label: string; pos: [number,number]; poleIdx: number } | null>(null);
@@ -110,7 +119,24 @@ export default function SavedLayersRenderer({
     setIsRotating(true);
   }, [map]);
 
-  // ─── Effect: listener mouse saat rotasi aktif ─────────────────────────────
+  // ─── Mulai mode rotasi gardu ─────────────────────────────────────────────
+  const startGarduRotation = useCallback((layerId: number, poleIdx: number, pos: [number, number]) => {
+    const containerPoint = map.latLngToContainerPoint(L.latLng(pos[0], pos[1]));
+    rotatingGarduRef.current = { layerId, poleIdx, centerX: containerPoint.x, centerY: containerPoint.y };
+    map.dragging.disable();
+    map.getContainer().style.cursor = "crosshair";
+    setIsRotatingGardu(true);
+  }, [map]);
+
+  // ─── Mulai mode offset gardu ─────────────────────────────────────────────
+  const startGarduOffset = useCallback((layerId: number, poleIdx: number, startX: number, startY: number, curOffX: number, curOffY: number) => {
+    offsettingGarduRef.current = { layerId, poleIdx, startX, startY, initOffX: curOffX, initOffY: curOffY };
+    map.dragging.disable();
+    map.getContainer().style.cursor = "move";
+    setIsOffsettingGardu(true);
+  }, [map]);
+
+  // ─── Effect: listener mouse saat rotasi schoor aktif ─────────────────────────────
   useEffect(() => {
     if (!isRotating) return;
     const container = mapContainerRef.current;
@@ -130,7 +156,7 @@ export default function SavedLayersRenderer({
       });
     };
 
-    const onMouseUp = (e: MouseEvent) => {
+    const onMouseUp = () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       map.dragging.enable();
       map.getContainer().style.cursor = "";
@@ -147,6 +173,81 @@ export default function SavedLayersRenderer({
     };
   }, [isRotating, onUpdateSchoorRotation, map]);
 
+  // ─── Effect: listener mouse saat rotasi gardu aktif ─────────────────────────────
+  useEffect(() => {
+    if (!isRotatingGardu) return;
+    const container = mapContainerRef.current;
+    if (!container) return;
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        const state = rotatingGarduRef.current;
+        if (!state || !onUpdateGarduConfig) return;
+        const rect = container.getBoundingClientRect();
+        const dx = (e.clientX - rect.left) - state.centerX;
+        const dy = (e.clientY - rect.top) - state.centerY;
+        const rawAngle = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+        const snapped = Math.round(((rawAngle % 360) + 360) % 360 / 5) * 5 % 360;
+        const isVert = (snapped >= 45 && snapped < 135) || (snapped >= 225 && snapped < 315);
+        onUpdateGarduConfig(state.layerId, state.poleIdx, {
+          rotationDeg: snapped,
+          orientasi: isVert ? "Vertikal" : "Horizontal",
+        });
+      });
+    };
+
+    const onMouseUp = () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      map.dragging.enable();
+      map.getContainer().style.cursor = "";
+      setIsRotatingGardu(false);
+      rotatingGarduRef.current = null;
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [isRotatingGardu, onUpdateGarduConfig, map]);
+
+  // ─── Effect: listener mouse saat offset gardu aktif ─────────────────────────────
+  useEffect(() => {
+    if (!isOffsettingGardu) return;
+    const onMouseMove = (e: MouseEvent) => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        const state = offsettingGarduRef.current;
+        if (!state || !onUpdateGarduConfig) return;
+        const dx = e.clientX - state.startX;
+        const dy = e.clientY - state.startY;
+        onUpdateGarduConfig(state.layerId, state.poleIdx, {
+          offsetX: Math.round(state.initOffX + dx),
+          offsetY: Math.round(state.initOffY + dy),
+        });
+      });
+    };
+
+    const onMouseUp = () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      map.dragging.enable();
+      map.getContainer().style.cursor = "";
+      setIsOffsettingGardu(false);
+      offsettingGarduRef.current = null;
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [isOffsettingGardu, onUpdateGarduConfig, map]);
+
   // Pre-compute junction sets
   const suppressedPoles = new Set<string>();
   const a3HostPoles = new Set<string>();
@@ -156,7 +257,7 @@ export default function SavedLayersRenderer({
   }
 
   // Pole dragging is allowed only when NOT in connect mode and NOT rotating
-  const isDraggablePole = !connectMode && !isRotating;
+  const isDraggablePole = !connectMode && !isRotating && !isRotatingGardu && !isOffsettingGardu;
 
   return (
     <>
@@ -504,6 +605,19 @@ export default function SavedLayersRenderer({
                   eventHandlers={{
                     mousedown: (e) => {
                       const target = e.originalEvent.target as HTMLElement;
+                      if (target.closest('.gardu-rot-handle')) {
+                        L.DomEvent.preventDefault(e.originalEvent);
+                        L.DomEvent.stopPropagation(e.originalEvent);
+                        startGarduRotation(layer.id, idx, pos);
+                        return;
+                      }
+                      if (target.closest('.gardu-drag-handle')) {
+                        L.DomEvent.preventDefault(e.originalEvent);
+                        L.DomEvent.stopPropagation(e.originalEvent);
+                        const curG = layer.gardus?.[idx];
+                        startGarduOffset(layer.id, idx, e.originalEvent.clientX, e.originalEvent.clientY, curG?.offsetX || 0, curG?.offsetY || 0);
+                        return;
+                      }
                       if (target.closest('.schoor-handle')) {
                         L.DomEvent.preventDefault(e.originalEvent);
                         L.DomEvent.stopPropagation(e.originalEvent);

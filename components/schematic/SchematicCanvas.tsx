@@ -10,6 +10,9 @@ import {
   renderBoxAppSvg,
   getCableStyle,
   getNodeLabelConfig,
+  getValidTrafoOptions,
+  CANTOL_MAX_KVA,
+  parseKva,
 } from "../../lib/assetStyles";
 import { convertSchematicToRabLayers } from "../../lib/rab/schematicAdapter";
 import { calculateRabVolumes } from "../../lib/rab/rabMapper";
@@ -159,6 +162,12 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [dragStartSnapshot, setDragStartSnapshot] = useState<{ id: string; x: number; y: number }[] | null>(null);
   const [dragStartCoords, setDragStartCoords] = useState<{ x: number; y: number } | null>(null);
+
+  // Gardu interactive on-canvas handles (rotasi bebas & offset posisi)
+  const [rotatingGarduNodeId, setRotatingGarduNodeId] = useState<string | null>(null);
+  const [garduRotateCenter, setGarduRotateCenter] = useState<{ x: number; y: number } | null>(null);
+  const [offsettingGarduNodeId, setOffsettingGarduNodeId] = useState<string | null>(null);
+  const [offsetDragStart, setOffsetDragStart] = useState<{ x: number; y: number; initX: number; initY: number } | null>(null);
 
   // Modals state
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
@@ -696,8 +705,62 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
     setDragStartCoords(coords);
   };
 
+  const handleGarduRotateMouseDown = (node: SchematicNode, e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setRotatingGarduNodeId(node.id);
+    setGarduRotateCenter({
+      x: node.x + (node.offsetX || 0),
+      y: node.y + (node.offsetY || 0),
+    });
+  };
+
+  const handleGarduOffsetMouseDown = (node: SchematicNode, e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setOffsettingGarduNodeId(node.id);
+    const coords = getCanvasCoords(e);
+    setOffsetDragStart({
+      x: coords.x,
+      y: coords.y,
+      initX: node.offsetX || 0,
+      initY: node.offsetY || 0,
+    });
+  };
+
   // Mouse move on canvas (drag nodes, panning, atau rubberband selection)
   const handleMouseMove = (e: React.MouseEvent) => {
+    // Gardu on-canvas rotation dragging
+    if (rotatingGarduNodeId && garduRotateCenter) {
+      const coords = getCanvasCoords(e);
+      const dx = coords.x - garduRotateCenter.x;
+      const dy = coords.y - garduRotateCenter.y;
+      const rawAngle = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+      const step = e.shiftKey ? 1 : 5;
+      const snapped = Math.round(((rawAngle % 360) + 360) % 360 / step) * step % 360;
+      onChange({
+        ...schematic,
+        nodes: nodes.map(n => n.id === rotatingGarduNodeId ? { ...n, rotationDeg: snapped } : n),
+      });
+      return;
+    }
+
+    // Gardu on-canvas offset dragging
+    if (offsettingGarduNodeId && offsetDragStart) {
+      const coords = getCanvasCoords(e);
+      const dx = snap(coords.x - offsetDragStart.x);
+      const dy = snap(coords.y - offsetDragStart.y);
+      onChange({
+        ...schematic,
+        nodes: nodes.map(n => n.id === offsettingGarduNodeId ? {
+          ...n,
+          offsetX: Math.round(offsetDragStart.initX + dx),
+          offsetY: Math.round(offsetDragStart.initY + dy),
+        } : n),
+      });
+      return;
+    }
+
     // Multi-node dragging
     if (draggingNodeId && dragStartSnapshot && dragStartCoords) {
       const coords = getCanvasCoords(e);
@@ -744,6 +807,17 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
 
   // Drag end: commit history jika node berpindah atau seleksi selesai
   const handleMouseUp = () => {
+    if (rotatingGarduNodeId) {
+      pushState(schematic);
+      setRotatingGarduNodeId(null);
+      setGarduRotateCenter(null);
+    }
+    if (offsettingGarduNodeId) {
+      pushState(schematic);
+      setOffsettingGarduNodeId(null);
+      setOffsetDragStart(null);
+    }
+
     // Multi-node drag commit
     if (draggingNodeId && dragStartSnapshot) {
       let hasMoved = false;
@@ -983,9 +1057,9 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
         type: "gardu",
         x: snappedX,
         y: snappedY,
-        label: "Gardu Cantol 50kVA",
+        label: "Gardu Cantol 100kVA",
         garduJenis: "Cantol",
-        trafoKva: 50,
+        trafoKva: 100,
         fasa: "3 phs",
       };
     } else if (activeTool === "treck-schoor") {
@@ -1757,6 +1831,13 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                         trafoKva: node.trafoKva || 100,
                         poleSize: 17,
                         renderMainPole: true,
+                        rotationDeg: node.rotationDeg || 0,
+                        offsetX: node.offsetX || 0,
+                        offsetY: node.offsetY || 0,
+                        isSelected,
+                        showHandles: isSelected,
+                        onRotateMouseDown: (e) => handleGarduRotateMouseDown(node, e),
+                        onOffsetMouseDown: (e) => handleGarduOffsetMouseDown(node, e),
                       })
                     )}
 
@@ -2100,7 +2181,12 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                       <span className="text-slate-500 font-bold">Jenis:</span>
                       <select
                         value={selectedNode.garduJenis || "Portal"}
-                        onChange={(e) => updateSelectedNode({ garduJenis: e.target.value as any })}
+                        onChange={(e) => {
+                          const newJenis = e.target.value as any;
+                          const curKva = selectedNode.trafoKva || 100;
+                          const newKva = newJenis === "Cantol" && curKva > CANTOL_MAX_KVA ? 100 : curKva;
+                          updateSelectedNode({ garduJenis: newJenis, trafoKva: newKva });
+                        }}
                         className="px-2 py-1 border border-slate-300 rounded font-semibold text-xs outline-none"
                       >
                         <option value="Portal">Portal (2 Tiang)</option>
@@ -2115,15 +2201,73 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                         onChange={(e) => updateSelectedNode({ trafoKva: parseInt(e.target.value) })}
                         className="px-2 py-1 border border-slate-300 rounded font-semibold text-xs outline-none"
                       >
-                        <option value={25}>25 kVA</option>
-                        <option value={50}>50 kVA</option>
-                        <option value={100}>100 kVA (Standar)</option>
-                        <option value={160}>160 kVA</option>
-                        <option value={200}>200 kVA</option>
-                        <option value={250}>250 kVA</option>
-                        <option value={400}>400 kVA</option>
-                        <option value={630}>630 kVA</option>
+                        {getValidTrafoOptions(selectedNode.garduJenis || "Portal").map((opt) => {
+                          const kvaNum = parseKva(opt);
+                          return (
+                            <option key={opt} value={kvaNum}>
+                              {kvaNum} kVA {kvaNum === 100 ? "(Standar)" : ""}
+                            </option>
+                          );
+                        })}
                       </select>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <span className="text-slate-500 font-bold ml-1">Rot:</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={360}
+                        step={15}
+                        value={Math.round(selectedNode.rotationDeg || 0)}
+                        onChange={(e) => updateSelectedNode({ rotationDeg: parseInt(e.target.value) || 0 })}
+                        className="w-14 px-1 py-0.5 border border-slate-300 rounded font-mono font-bold text-xs"
+                      />
+                      <span className="text-slate-500 font-bold">°</span>
+                      <button
+                        type="button"
+                        onClick={() => updateSelectedNode({ rotationDeg: 0 })}
+                        className="px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 hover:bg-slate-200 rounded"
+                        title="Set 0° (Horizontal)"
+                      >
+                        0°
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateSelectedNode({ rotationDeg: 90 })}
+                        className="px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 hover:bg-slate-200 rounded"
+                        title="Set 90° (Vertikal)"
+                      >
+                        90°
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <span className="text-slate-500 font-bold ml-1">Offset:</span>
+                      <span className="text-[10px] text-slate-400">X</span>
+                      <input
+                        type="number"
+                        value={selectedNode.offsetX || 0}
+                        onChange={(e) => updateSelectedNode({ offsetX: parseInt(e.target.value) || 0 })}
+                        className="w-12 px-1 py-0.5 border border-slate-300 rounded font-mono font-bold text-xs"
+                      />
+                      <span className="text-[10px] text-slate-400">Y</span>
+                      <input
+                        type="number"
+                        value={selectedNode.offsetY || 0}
+                        onChange={(e) => updateSelectedNode({ offsetY: parseInt(e.target.value) || 0 })}
+                        className="w-12 px-1 py-0.5 border border-slate-300 rounded font-mono font-bold text-xs"
+                      />
+                      {(selectedNode.offsetX || selectedNode.offsetY) ? (
+                        <button
+                          type="button"
+                          onClick={() => updateSelectedNode({ offsetX: 0, offsetY: 0 })}
+                          className="px-1.5 py-0.5 text-[10px] font-bold text-purple-700 hover:bg-purple-100 rounded"
+                          title="Reset ke titik pusat tiang"
+                        >
+                          Reset
+                        </button>
+                      ) : null}
                     </div>
                   </>
                 )}

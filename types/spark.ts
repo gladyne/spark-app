@@ -1,6 +1,9 @@
 export type GarduConfig = {
   jenis: "Cantol" | "Portal";
-  orientasi: "Horizontal" | "Vertikal";
+  orientasi?: "Horizontal" | "Vertikal";
+  rotationDeg?: number; // rotasi bebas 0-360° (0° = Horizontal, 90° = Vertikal)
+  offsetX?: number; // offset visual dari tiang induk (pixel)
+  offsetY?: number; // offset visual dari tiang induk (pixel)
   trafo: string;
   fasa?: "1 phs" | "3 phs";
   lvBoardType?: "2 Jurusan" | "4 Jurusan";

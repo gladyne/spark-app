@@ -1,5 +1,6 @@
 "use client";
 import type { GarduConfig, SchoorConfig, NetworkLayer, Connection, ConnectFirstState } from "../../types/spark";
+import { getValidTrafoOptions } from "../../lib/assetStyles";
 
 interface Props {
   poles: [number, number][];
@@ -74,7 +75,7 @@ export default function ComponentPalette({
               <div>
                 <label className="text-[10px] text-purple-600 font-bold block mb-1">Kapasitas Trafo</label>
                 <select value={paletteGarduTrafo} onChange={e => setPaletteGarduTrafo(e.target.value)} className={selectCls}>
-                  {(paletteGarduJenis === "Cantol" ? trafoOptions.filter(t => parseInt(t) <= 50) : trafoOptions).map(t => <option key={t} value={t}>{t}</option>)}
+                  {getValidTrafoOptions(paletteGarduJenis, trafoOptions).map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
               {paletteGarduJenis === "Portal" && (

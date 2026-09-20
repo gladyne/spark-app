@@ -218,41 +218,175 @@ export function renderPoleSvg({
 }
 
 /**
+ * Konfigurasi Kapasitas & Opsi Gardu Distribusi
+ * Sumber kebenaran tunggal yang dipakai bersama oleh:
+ * SparkMap.tsx, SchematicCanvas.tsx, GarduModal.tsx, ComponentPalette.tsx.
+ */
+export const CANTOL_MAX_KVA = 100;
+
+export const GARDU_JENIS_OPTIONS = [
+  { value: "Cantol", label: "Cantol (1 Tiang – Maks 100 kVA)", maxKva: 100 },
+  { value: "Portal", label: "Portal (2 Tiang – s/d 1000 kVA)", maxKva: 1000 },
+] as const;
+
+export const GARDU_TRAFO_OPTIONS = [
+  "25 kVA",
+  "50 kVA",
+  "100 kVA",
+  "160 kVA",
+  "200 kVA",
+  "250 kVA",
+  "400 kVA",
+  "630 kVA",
+  "1000 kVA",
+] as const;
+
+export function parseKva(trafoLabelOrNum: string | number | undefined): number {
+  if (typeof trafoLabelOrNum === "number") return trafoLabelOrNum;
+  if (!trafoLabelOrNum) return 0;
+  return parseInt(String(trafoLabelOrNum).replace(/[^0-9]/g, ""), 10) || 0;
+}
+
+export function isKvaAllowedForGardu(jenis: "Cantol" | "Portal", kva: number): boolean {
+  if (jenis === "Cantol") return kva <= CANTOL_MAX_KVA;
+  return true;
+}
+
+export function getValidTrafoOptions(jenis: "Cantol" | "Portal", customOptions?: string[]): string[] {
+  const baseList = customOptions && customOptions.length > 0 ? customOptions : (GARDU_TRAFO_OPTIONS as unknown as string[]);
+  if (jenis === "Cantol") {
+    return baseList.filter(t => parseKva(t) <= CANTOL_MAX_KVA);
+  }
+  return [...baseList];
+}
+
+/**
  * Render Simbol Gardu (Cantol / Portal) - Persis SparkMap.tsx & svgUtils.ts
- * Tanpa teks bertumpuk di dalam segitiga trafo.
+ * Mendukung rotasi bebas (0-360°) dan offset visual (offsetX, offsetY) dari tiang induk.
  */
 export function renderGarduSvg({
   jenis = "Portal",
   orientasi = "Horizontal",
+  rotationDeg,
+  offsetX = 0,
+  offsetY = 0,
   trafoKva = 100,
   poleSize = 17,
   renderMainPole = true,
+  isSelected = false,
+  showHandles = false,
+  onRotateMouseDown,
+  onOffsetMouseDown,
 }: {
   jenis?: "Cantol" | "Portal";
   orientasi?: "Horizontal" | "Vertikal";
+  rotationDeg?: number;
+  offsetX?: number;
+  offsetY?: number;
   trafoKva?: number;
   poleSize?: number;
   renderMainPole?: boolean;
+  isSelected?: boolean;
+  showHandles?: boolean;
+  onRotateMouseDown?: (e: React.MouseEvent) => void;
+  onOffsetMouseDown?: (e: React.MouseEvent) => void;
 }) {
   const trafoColor = SPARK_ASSET_COLORS.GARDU.stroke;
   const trafoBg = SPARK_ASSET_COLORS.GARDU.fill;
   const r = poleSize / 2; // 8.5
   const gap = 3;
 
+  const effectiveRot =
+    typeof rotationDeg === "number"
+      ? rotationDeg
+      : orientasi === "Vertikal"
+      ? 90
+      : 0;
+
+  const hasOffset = Math.abs(offsetX) > 0.5 || Math.abs(offsetY) > 0.5;
+
   if (jenis === "Cantol") {
     // 1 Tiang dengan segitiga trafo duduk pas di atas tiang (tinggi 14px, lebar 17px)
     return (
       <g>
-        {renderMainPole && (
-          <circle cx="0" cy="0" r={r} fill="white" stroke="#000000" strokeWidth={2} />
+        {/* Titik jangkar tiang induk asli jika ada offset */}
+        {hasOffset && (
+          <>
+            <line
+              x1={0}
+              y1={0}
+              x2={offsetX}
+              y2={offsetY}
+              stroke={trafoColor}
+              strokeWidth={1.5}
+              strokeDasharray="3,3"
+              opacity={0.65}
+            />
+            <circle cx={0} cy={0} r={3} fill={trafoColor} opacity={0.8} />
+          </>
         )}
-        <polygon
-          points={`0,-${r + 14} ${r},-${r - 1} -${r},-${r - 1}`}
-          fill={trafoBg}
-          stroke={trafoColor}
-          strokeWidth={2}
-          strokeLinejoin="round"
-        />
+
+        {/* Simbol Gardu Cantol pada posisi offset + rotasi */}
+        <g transform={`translate(${offsetX}, ${offsetY})`}>
+          <g transform={`rotate(${effectiveRot})`}>
+            {renderMainPole && (
+              <circle cx="0" cy="0" r={r} fill="white" stroke="#000000" strokeWidth={2} />
+            )}
+            <polygon
+              points={`0,-${r + 14} ${r},-${r - 1} -${r},-${r - 1}`}
+              fill={trafoBg}
+              stroke={trafoColor}
+              strokeWidth={2}
+              strokeLinejoin="round"
+            />
+
+            {/* Handle Rotasi On-Canvas saat terseleksi */}
+            {showHandles && (
+              <g
+                className="cursor-grab hover:scale-125 transition-transform"
+                onMouseDown={onRotateMouseDown}
+              >
+                <line
+                  x1={0}
+                  y1={-(r + 14)}
+                  x2={0}
+                  y2={-(r + 26)}
+                  stroke={trafoColor}
+                  strokeWidth={1.5}
+                  strokeDasharray="2,2"
+                />
+                <circle
+                  cx={0}
+                  cy={-(r + 26)}
+                  r={5}
+                  fill="#9333ea"
+                  stroke="#ffffff"
+                  strokeWidth={1.5}
+                />
+              </g>
+            )}
+          </g>
+
+          {/* Handle Offset On-Canvas saat terseleksi */}
+          {showHandles && (
+            <g
+              className="cursor-move hover:scale-110 transition-transform"
+              onMouseDown={onOffsetMouseDown}
+            >
+              <title>Drag untuk geser posisi dari tiang</title>
+              <circle
+                cx={0}
+                cy={0}
+                r={6}
+                fill="#a855f7"
+                fillOpacity={0.25}
+                stroke="#9333ea"
+                strokeWidth={1.5}
+                strokeDasharray="2,2"
+              />
+            </g>
+          )}
+        </g>
       </g>
     );
   }
@@ -261,24 +395,93 @@ export function renderGarduSvg({
   const offset = -(poleSize + gap); // -(17 + 3) = -20
   return (
     <g>
-      {renderMainPole && (
+      {/* Titik jangkar tiang induk asli jika ada offset */}
+      {hasOffset && (
         <>
-          <circle cx="0" cy="0" r={r} fill="white" stroke="#000000" strokeWidth={2} />
-          <circle cx={offset} cy="0" r={r} fill="white" stroke="#000000" strokeWidth={2} />
+          <line
+            x1={0}
+            y1={0}
+            x2={offsetX}
+            y2={offsetY}
+            stroke={trafoColor}
+            strokeWidth={1.5}
+            strokeDasharray="3,3"
+            opacity={0.65}
+          />
+          <circle cx={0} cy={0} r={3} fill={trafoColor} opacity={0.8} />
         </>
       )}
-      {/* Balok / Segitiga trafo di atas kedua tiang */}
-      <polygon
-        points={`
-          ${offset / 2},-${r + 14}
-          ${r * 0.8},-${r - 1}
-          ${offset - r * 0.8},-${r - 1}
-        `}
-        fill={trafoBg}
-        stroke={trafoColor}
-        strokeWidth={2.2}
-        strokeLinejoin="round"
-      />
+
+      {/* Simbol Gardu Portal pada posisi offset + rotasi bebas */}
+      <g transform={`translate(${offsetX}, ${offsetY})`}>
+        <g transform={`rotate(${effectiveRot})`}>
+          {renderMainPole && (
+            <>
+              <circle cx="0" cy="0" r={r} fill="white" stroke="#000000" strokeWidth={2} />
+              <circle cx={offset} cy="0" r={r} fill="white" stroke="#000000" strokeWidth={2} />
+            </>
+          )}
+          {/* Balok / Segitiga trafo di atas kedua tiang */}
+          <polygon
+            points={`
+              ${offset / 2},-${r + 14}
+              ${r * 0.8},-${r - 1}
+              ${offset - r * 0.8},-${r - 1}
+            `}
+            fill={trafoBg}
+            stroke={trafoColor}
+            strokeWidth={2.2}
+            strokeLinejoin="round"
+          />
+
+          {/* Handle Rotasi On-Canvas saat terseleksi */}
+          {showHandles && (
+            <g
+              className="cursor-grab hover:scale-125 transition-transform"
+              onMouseDown={onRotateMouseDown}
+            >
+              <title>{`Drag untuk rotasi bebas (${Math.round(effectiveRot)}°)`}</title>
+              <line
+                x1={offset / 2}
+                y1={-(r + 14)}
+                x2={offset / 2}
+                y2={-(r + 26)}
+                stroke={trafoColor}
+                strokeWidth={1.5}
+                strokeDasharray="2,2"
+              />
+              <circle
+                cx={offset / 2}
+                cy={-(r + 26)}
+                r={5.5}
+                fill="#9333ea"
+                stroke="#ffffff"
+                strokeWidth={1.5}
+              />
+            </g>
+          )}
+        </g>
+
+        {/* Handle Offset On-Canvas saat terseleksi */}
+        {showHandles && (
+          <g
+            className="cursor-move hover:scale-110 transition-transform"
+            onMouseDown={onOffsetMouseDown}
+          >
+            <title>Drag untuk geser posisi dari tiang</title>
+            <circle
+              cx={offset / 2}
+              cy={0}
+              r={7}
+              fill="#a855f7"
+              fillOpacity={0.25}
+              stroke="#9333ea"
+              strokeWidth={1.5}
+              strokeDasharray="2,2"
+            />
+          </g>
+        )}
+      </g>
     </g>
   );
 }
