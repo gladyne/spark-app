@@ -234,7 +234,6 @@ export default function TabelLegenda({ schematic }: Props) {
         return (
           <svg width="16" height="16" viewBox="-10 -10 20 20" className="flex-shrink-0">
             <circle r="8" fill="#ffeb3b" stroke="#000000" strokeWidth="2" />
-            <circle r="4.5" fill="none" stroke="#000000" strokeWidth="1.5" />
           </svg>
         );
 

@@ -197,24 +197,134 @@ export function renderPoleSvg({
 
   return (
     <g>
-      {/* Outer Circle Tiang */}
+      {/* Circle Tiang (Identik untuk Beton dan Baja: Kuning untuk rencana, Hitam untuk existing) */}
       <circle
         r={r}
         fill={bg}
         stroke={border}
         strokeWidth={strokeW}
       />
-      {/* Jika Tiang Baja: Double-ring konsentris untuk membedakan dengan Tiang Beton */}
-      {isBaja && (
-        <circle
-          r={r * 0.6}
-          fill="none"
-          stroke={border}
-          strokeWidth={1.5}
-        />
-      )}
     </g>
   );
+}
+
+/**
+ * ─── KATALOG SPESIFIKASI TIANG RAB KHS 2026 ─────────────────────────────────
+ * Diekstrak langsung dari rab_katalog_dengan_harga.json (Section: MATERIAL UTAMA, "Mendirikan Tiang")
+ * Menjadi Single Source of Truth kombinasi valid [material + tinggi + kekuatan daN]
+ * untuk SparkMap.tsx, SchematicCanvas.tsx, NetworkSettings.tsx, dan rabMapper.ts.
+ */
+export type MaterialTiang = "Beton" | "Baja";
+
+export interface TiangKatalogSpec {
+  material: MaterialTiang;
+  tinggi: number;
+  kekuatan: number;
+  rowKhs: number;
+  label: string;
+}
+
+export const TIANG_KATALOG_SPECS: TiangKatalogSpec[] = [
+  // ─── Tiang Beton (5 Kombinasi Valid KHS) ───
+  { material: "Beton", tinggi: 9, kekuatan: 200, rowKhs: 19, label: "9m 200 daN (JTR Standar)" },
+  { material: "Beton", tinggi: 12, kekuatan: 200, rowKhs: 20, label: "12m 200 daN (JTM Tumpu)" },
+  { material: "Beton", tinggi: 12, kekuatan: 350, rowKhs: 21, label: "12m 350 daN (JTM Sudut/Trafo)" },
+  { material: "Beton", tinggi: 13, kekuatan: 350, rowKhs: 22, label: "13m 350 daN" },
+  { material: "Beton", tinggi: 14, kekuatan: 350, rowKhs: 23, label: "14m 350 daN" },
+
+  // ─── Tiang Baja (8 Kombinasi Valid KHS) ───
+  { material: "Baja", tinggi: 7, kekuatan: 100, rowKhs: 24, label: "7m 100 daN" },
+  { material: "Baja", tinggi: 9, kekuatan: 100, rowKhs: 25, label: "9m 100 daN" },
+  { material: "Baja", tinggi: 9, kekuatan: 200, rowKhs: 26, label: "9m 200 daN" },
+  { material: "Baja", tinggi: 11, kekuatan: 200, rowKhs: 27, label: "11m 200 daN" },
+  { material: "Baja", tinggi: 12, kekuatan: 200, rowKhs: 28, label: "12m 200 daN" },
+  { material: "Baja", tinggi: 12, kekuatan: 350, rowKhs: 29, label: "12m 350 daN" },
+  { material: "Baja", tinggi: 13, kekuatan: 350, rowKhs: 30, label: "13m 350 daN" },
+  { material: "Baja", tinggi: 14, kekuatan: 350, rowKhs: 31, label: "14m 350 daN" },
+];
+
+/**
+ * Mendapatkan daftar tinggi tiang yang valid berdasarkan material
+ */
+export function getValidTinggiTiang(material: string): number[] {
+  const isBaja = material.toLowerCase().includes("baja") || material.toLowerCase().includes("besi");
+  const mat: MaterialTiang = isBaja ? "Baja" : "Beton";
+  const heights = Array.from(
+    new Set(TIANG_KATALOG_SPECS.filter(s => s.material === mat).map(s => s.tinggi))
+  );
+  return heights.sort((a, b) => a - b);
+}
+
+/**
+ * Mendapatkan daftar kekuatan (daN) yang valid berdasarkan material & tinggi
+ */
+export function getValidKekuatanTiang(material: string, tinggi: number): number[] {
+  const isBaja = material.toLowerCase().includes("baja") || material.toLowerCase().includes("besi");
+  const mat: MaterialTiang = isBaja ? "Baja" : "Beton";
+  const specs = TIANG_KATALOG_SPECS.filter(s => s.material === mat && s.tinggi === tinggi);
+  const dans = Array.from(new Set(specs.map(s => s.kekuatan)));
+  return dans.sort((a, b) => a - b);
+}
+
+/**
+ * Memastikan kombinasi material, tinggi, dan kekuatan selalu valid sesuai katalog KHS
+ */
+export function getValidTiangCombo(material: string, tinggi?: number, kekuatan?: number): {
+  material: MaterialTiang;
+  tinggi: number;
+  kekuatan: number;
+} {
+  const isBaja = material.toLowerCase().includes("baja") || material.toLowerCase().includes("besi");
+  const mat: MaterialTiang = isBaja ? "Baja" : "Beton";
+  const validHeights = getValidTinggiTiang(mat);
+
+  const chosenTinggi = tinggi && validHeights.includes(tinggi)
+    ? tinggi
+    : (validHeights.includes(12) ? 12 : validHeights[0]);
+
+  const validDans = getValidKekuatanTiang(mat, chosenTinggi);
+  const chosenKekuatan = kekuatan && validDans.includes(kekuatan)
+    ? kekuatan
+    : validDans[0];
+
+  return {
+    material: mat,
+    tinggi: chosenTinggi,
+    kekuatan: chosenKekuatan,
+  };
+}
+
+/**
+ * Mendapatkan daftar material tiang yang didukung katalog
+ */
+export function getValidMaterials(): MaterialTiang[] {
+  return ["Beton", "Baja"];
+}
+
+/**
+ * Helper transisi cascading ketika material tiang diubah
+ */
+export function handleTiangMaterialChange(
+  newMaterial: string,
+  curTinggi?: number,
+  curKekuatan?: number
+): { material: MaterialTiang; tinggi: number; kekuatan: number } {
+  return getValidTiangCombo(newMaterial, curTinggi, curKekuatan);
+}
+
+/**
+ * Helper transisi cascading ketika tinggi tiang diubah
+ */
+export function handleTiangTinggiChange(
+  newTinggi: number,
+  curMaterial: string,
+  curKekuatan?: number
+): { tinggi: number; kekuatan: number } {
+  const isBaja = curMaterial.toLowerCase().includes("baja") || curMaterial.toLowerCase().includes("besi");
+  const mat: MaterialTiang = isBaja ? "Baja" : "Beton";
+  const validDans = getValidKekuatanTiang(mat, newTinggi);
+  const nextKekuatan = curKekuatan && validDans.includes(curKekuatan) ? curKekuatan : validDans[0];
+  return { tinggi: newTinggi, kekuatan: nextKekuatan };
 }
 
 /**

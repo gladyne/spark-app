@@ -1,4 +1,11 @@
 "use client";
+import {
+  getValidTinggiTiang,
+  getValidKekuatanTiang,
+  getValidTiangCombo,
+  handleTiangMaterialChange,
+  handleTiangTinggiChange,
+} from "../../lib/assetStyles";
 
 const CONDUCTOR: Record<string, { tipe: string; ukuran: number[] }> = {
   "SUTM":                          { tipe: "AAAC / AAACS", ukuran: [35, 50, 70, 95, 120, 150, 240] },
@@ -167,22 +174,35 @@ export default function NetworkSettings({
               <FieldRow>
                 <Field>
                   <select
+                    id="network-settings-material-select"
                     className={selectCls}
                     value={materialTiang === "Besi" ? "Baja" : materialTiang}
-                    onChange={e => setMaterialTiang(e.target.value)}
+                    onChange={e => {
+                      const valid = handleTiangMaterialChange(e.target.value, tinggiTiang, kekuatanTiang);
+                      setMaterialTiang(valid.material);
+                      setTinggiTiang(valid.tinggi);
+                      setKekuatanTiang?.(valid.kekuatan);
+                    }}
                   >
                     <option value="Beton">Tiang Beton</option>
                     <option value="Baja">Tiang Baja</option>
                   </select>
                 </Field>
                 <Field>
-                  <select className={selectCls} value={tinggiTiang} onChange={e => setTinggiTiang(Number(e.target.value))}>
-                    <option value={7}>7 meter</option>
-                    <option value={9}>9 meter</option>
-                    <option value={11}>11 meter</option>
-                    <option value={12}>12 meter</option>
-                    <option value={13}>13 meter</option>
-                    <option value={14}>14 meter</option>
+                  <select
+                    id="network-settings-tinggi-select"
+                    className={selectCls}
+                    value={tinggiTiang}
+                    onChange={e => {
+                      const newH = Number(e.target.value);
+                      const valid = handleTiangTinggiChange(newH, materialTiang, kekuatanTiang);
+                      setTinggiTiang(valid.tinggi);
+                      setKekuatanTiang?.(valid.kekuatan);
+                    }}
+                  >
+                    {getValidTinggiTiang(materialTiang).map(h => (
+                      <option key={h} value={h}>{h} meter</option>
+                    ))}
                   </select>
                 </Field>
               </FieldRow>
@@ -193,13 +213,14 @@ export default function NetworkSettings({
               <FieldRow>
                 <Field>
                   <select
+                    id="network-settings-kekuatan-select"
                     className={selectCls}
                     value={kekuatanTiang}
                     onChange={e => setKekuatanTiang?.(Number(e.target.value))}
                   >
-                    <option value={100}>100 daN</option>
-                    <option value={200}>200 daN</option>
-                    <option value={350}>350 daN</option>
+                    {getValidKekuatanTiang(materialTiang, tinggiTiang).map(dan => (
+                      <option key={dan} value={dan}>{dan} daN</option>
+                    ))}
                   </select>
                 </Field>
                 <Field>

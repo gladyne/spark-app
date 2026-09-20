@@ -12,6 +12,7 @@ import type { GarduConfig, SchoorConfig, NetworkLayer, Connection, SnapInfo, Con
 import { haversineMeters } from "../lib/geo";
 import { countPoleTypes, computePoleTypes } from "../lib/computePoleData";
 import { buildGarduSvg, buildSchoorSvg } from "../lib/svgUtils";
+import { getValidTiangCombo } from "../lib/assetStyles";
 
 import MapClickHandler from "./map/MapClickHandler";
 import MapFlyTo from "./map/MapFlyTo";
@@ -566,6 +567,13 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
       return isShort ? 40 : (prev === 40 ? 50 : prev);
     });
   }, [jenisJaringan]);
+
+  // Validasi kombinasi [materialTiang, tinggiTiang, kekuatanTiang] agar selalu sinkron dengan katalog KHS
+  useEffect(() => {
+    const valid = getValidTiangCombo(materialTiang, tinggiTiang, kekuatanTiang);
+    if (valid.tinggi !== tinggiTiang) setTinggiTiang(valid.tinggi);
+    if (valid.kekuatan !== kekuatanTiang) setKekuatanTiang(valid.kekuatan);
+  }, [materialTiang, tinggiTiang]);
 
   useEffect(() => {
     if (!rawRoute || isEdited) return;

@@ -11,9 +11,15 @@ import {
   getCableStyle,
   getNodeLabelConfig,
   getValidTrafoOptions,
+  getValidTinggiTiang,
+  getValidKekuatanTiang,
+  getValidTiangCombo,
+  handleTiangMaterialChange,
+  handleTiangTinggiChange,
   CANTOL_MAX_KVA,
   parseKva,
 } from "../../lib/assetStyles";
+import TiangCascadingSelects from "../common/TiangCascadingSelects";
 import { convertSchematicToRabLayers } from "../../lib/rab/schematicAdapter";
 import { calculateRabVolumes } from "../../lib/rab/rabMapper";
 import { formatRupiah } from "../sidebar/RabSummaryPanel";
@@ -1220,7 +1226,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
               <span>Tiang Beton</span>
             </button>
 
-            {/* Simbol Tiang Baja (Double-ring) */}
+            {/* Simbol Tiang Baja */}
             <button
               onClick={() => setActiveTool("tiang-baja")}
               className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
@@ -1228,11 +1234,9 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                   ? "bg-amber-700 text-white shadow-sm ring-2 ring-amber-400/50"
                   : "bg-slate-800 text-slate-300 hover:bg-slate-700"
               }`}
-              title="Tiang Baja (Double-ring Konsentris)"
+              title="Tiang Baja (Lingkaran Kuning Border Hitam)"
             >
-              <div className="w-3.5 h-3.5 rounded-full bg-[#ffeb3b] border-2 border-black flex items-center justify-center">
-                <div className="w-1.5 h-1.5 rounded-full border border-black" />
-              </div>
+              <div className="w-3.5 h-3.5 rounded-full bg-[#ffeb3b] border-2 border-black" />
               <span>Tiang Baja</span>
             </button>
 
@@ -2073,46 +2077,20 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                 {/* Atribut Tiang (Beton / Baja / Material / Tinggi / Posisi) */}
                 {(selectedNode.type.startsWith("tiang")) && (
                   <>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-slate-500 font-bold">Material:</span>
-                      <select
-                        value={selectedNode.materialTiang || "Beton"}
-                        onChange={(e) => updateSelectedNode({ materialTiang: e.target.value as any })}
-                        className="px-2 py-1 border border-slate-300 rounded font-semibold text-xs outline-none"
-                      >
-                        <option value="Beton">Tiang Beton (Solid Kuning)</option>
-                        <option value="Baja">Tiang Baja (Double Ring)</option>
-                      </select>
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-slate-500 font-bold">Tinggi:</span>
-                      <select
-                        value={selectedNode.tinggiTiang || 12}
-                        onChange={(e) => updateSelectedNode({ tinggiTiang: parseInt(e.target.value) })}
-                        className="px-2 py-1 border border-slate-300 rounded font-semibold text-xs outline-none"
-                      >
-                        <option value={9}>9 Meter (JTR Standar)</option>
-                        <option value={11}>11 Meter</option>
-                        <option value={12}>12 Meter (JTM Standar)</option>
-                        <option value={13}>13 Meter</option>
-                        <option value={14}>14 Meter (JTM Trafo)</option>
-                        <option value={7}>7 Meter</option>
-                      </select>
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-slate-500 font-bold">Kekuatan:</span>
-                      <select
-                        value={selectedNode.kekuatanTiang || 200}
-                        onChange={(e) => updateSelectedNode({ kekuatanTiang: parseInt(e.target.value) })}
-                        className="px-2 py-1 border border-slate-300 rounded font-semibold text-xs outline-none"
-                      >
-                        <option value={200}>200 daN (Tumpu)</option>
-                        <option value={350}>350 daN (Sudut/Trafo)</option>
-                        <option value={100}>100 daN</option>
-                      </select>
-                    </div>
+                    <TiangCascadingSelects
+                      idPrefix="schematic-inspector"
+                      material={selectedNode.materialTiang || "Beton"}
+                      tinggi={selectedNode.tinggiTiang || 12}
+                      kekuatan={selectedNode.kekuatanTiang || 200}
+                      onChange={(vals) => {
+                        updateSelectedNode({
+                          materialTiang: vals.material,
+                          tinggiTiang: vals.tinggi,
+                          kekuatanTiang: vals.kekuatan,
+                        });
+                      }}
+                      layout="inline"
+                    />
 
                     {/* Pasang Penopang Schoor langsung pada tiang */}
                     <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded border border-slate-200">
@@ -2440,10 +2418,26 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
 
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Material Tiang:</label>
+                      <label htmlFor="bulk-material-select" className="block text-[10px] font-bold text-slate-600 mb-1">Material Tiang:</label>
                       <select
+                        id="bulk-material-select"
                         value={bulkForm.materialTiang}
-                        onChange={(e) => setBulkForm({ ...bulkForm, materialTiang: e.target.value })}
+                        onChange={(e) => {
+                          const newMat = e.target.value;
+                          if (!newMat) {
+                            setBulkForm({ ...bulkForm, materialTiang: "" });
+                          } else {
+                            const curH = bulkForm.tinggiTiang ? parseInt(bulkForm.tinggiTiang) : undefined;
+                            const curK = bulkForm.kekuatanTiang ? parseInt(bulkForm.kekuatanTiang) : undefined;
+                            const valid = handleTiangMaterialChange(newMat, curH, curK);
+                            setBulkForm({
+                              ...bulkForm,
+                              materialTiang: newMat,
+                              tinggiTiang: curH ? String(valid.tinggi) : bulkForm.tinggiTiang,
+                              kekuatanTiang: curK ? String(valid.kekuatan) : bulkForm.kekuatanTiang,
+                            });
+                          }
+                        }}
                         className="w-full px-2 py-1.5 bg-white border border-amber-300 rounded-lg text-xs font-medium outline-none"
                       >
                         <option value="">(Biarkan Tidak Diubah)</option>
@@ -2453,33 +2447,50 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Tinggi Tiang:</label>
+                      <label htmlFor="bulk-tinggi-select" className="block text-[10px] font-bold text-slate-600 mb-1">Tinggi Tiang:</label>
                       <select
+                        id="bulk-tinggi-select"
                         value={bulkForm.tinggiTiang}
-                        onChange={(e) => setBulkForm({ ...bulkForm, tinggiTiang: e.target.value })}
+                        onChange={(e) => {
+                          const newHStr = e.target.value;
+                          if (!newHStr) {
+                            setBulkForm({ ...bulkForm, tinggiTiang: "" });
+                          } else {
+                            const newH = parseInt(newHStr);
+                            const mat = bulkForm.materialTiang || "Beton";
+                            const curK = bulkForm.kekuatanTiang ? parseInt(bulkForm.kekuatanTiang) : undefined;
+                            const valid = handleTiangTinggiChange(newH, mat, curK);
+                            setBulkForm({
+                              ...bulkForm,
+                              tinggiTiang: newHStr,
+                              kekuatanTiang: curK ? String(valid.kekuatan) : bulkForm.kekuatanTiang,
+                            });
+                          }
+                        }}
                         className="w-full px-2 py-1.5 bg-white border border-amber-300 rounded-lg text-xs font-medium outline-none"
                       >
                         <option value="">(Biarkan Tidak Diubah)</option>
-                        <option value="9">9 Meter (JTR Standar)</option>
-                        <option value="11">11 Meter</option>
-                        <option value="12">12 Meter (JTM Standar)</option>
-                        <option value="13">13 Meter</option>
-                        <option value="14">14 Meter (JTM Trafo)</option>
-                        <option value="7">7 Meter</option>
+                        {getValidTinggiTiang(bulkForm.materialTiang || "Beton").map(h => (
+                          <option key={h} value={String(h)}>{h} Meter</option>
+                        ))}
                       </select>
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Kekuatan (daN):</label>
+                      <label htmlFor="bulk-kekuatan-select" className="block text-[10px] font-bold text-slate-600 mb-1">Kekuatan (daN):</label>
                       <select
+                        id="bulk-kekuatan-select"
                         value={bulkForm.kekuatanTiang}
                         onChange={(e) => setBulkForm({ ...bulkForm, kekuatanTiang: e.target.value })}
                         className="w-full px-2 py-1.5 bg-white border border-amber-300 rounded-lg text-xs font-medium outline-none"
                       >
                         <option value="">(Biarkan Tidak Diubah)</option>
-                        <option value="200">200 daN (Tumpu)</option>
-                        <option value="350">350 daN (Sudut/Trafo)</option>
-                        <option value="100">100 daN</option>
+                        {getValidKekuatanTiang(
+                          bulkForm.materialTiang || "Beton",
+                          bulkForm.tinggiTiang ? parseInt(bulkForm.tinggiTiang) : 12
+                        ).map(k => (
+                          <option key={k} value={String(k)}>{k} daN</option>
+                        ))}
                       </select>
                     </div>
 
