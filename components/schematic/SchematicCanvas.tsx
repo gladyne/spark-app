@@ -1212,35 +1212,35 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
 
             <div className="h-5 w-px bg-slate-700 mx-1" />
 
-            {/* Simbol Tiang Beton (Kuning Lingkaran Hitam - Persis SparkMap.tsx) */}
+            {/* Simbol Tiang Beton (Putih Lingkaran Hijau - Skema Baru SPARK) */}
             <button
               onClick={() => setActiveTool("tiang-tm")}
               className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
                 activeTool === "tiang-tm"
-                  ? "bg-amber-600 text-white shadow-sm ring-2 ring-amber-400/50"
+                  ? "bg-emerald-800 text-white shadow-sm ring-2 ring-emerald-400/50"
                   : "bg-slate-800 text-slate-300 hover:bg-slate-700"
               }`}
-              title="Tiang Beton (Lingkaran Kuning Border Hitam)"
+              title="Tiang Beton (Lingkaran Putih Border Hijau)"
             >
-              <div className="w-3.5 h-3.5 rounded-full bg-[#ffeb3b] border-2 border-black" />
+              <div className="w-3.5 h-3.5 rounded-full bg-white border-2 border-[#16a34a]" />
               <span>Tiang Beton</span>
             </button>
 
-            {/* Simbol Tiang Baja */}
+            {/* Simbol Tiang Baja (Putih Lingkaran Abu-abu - Skema Baru SPARK) */}
             <button
               onClick={() => setActiveTool("tiang-baja")}
               className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
                 activeTool === "tiang-baja"
-                  ? "bg-amber-700 text-white shadow-sm ring-2 ring-amber-400/50"
+                  ? "bg-slate-700 text-white shadow-sm ring-2 ring-slate-400/50"
                   : "bg-slate-800 text-slate-300 hover:bg-slate-700"
               }`}
-              title="Tiang Baja (Lingkaran Kuning Border Hitam)"
+              title="Tiang Baja (Lingkaran Putih Border Abu-abu)"
             >
-              <div className="w-3.5 h-3.5 rounded-full bg-[#ffeb3b] border-2 border-black" />
+              <div className="w-3.5 h-3.5 rounded-full bg-white border-2 border-[#9ca3af]" />
               <span>Tiang Baja</span>
             </button>
 
-            {/* Simbol Tiang Exist (Hitam solid border putih) */}
+            {/* Simbol Tiang Exist (Hitam solid border hijau) */}
             <button
               onClick={() => setActiveTool("tiang-existing")}
               className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
@@ -1248,9 +1248,9 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                   ? "bg-slate-700 text-white border border-slate-500 shadow-sm"
                   : "bg-slate-800 text-slate-300 hover:bg-slate-700"
               }`}
-              title="Tiang Existing (Hitam Border Putih)"
+              title="Tiang Existing (Hitam Border Hijau)"
             >
-              <div className="w-3.5 h-3.5 rounded-full bg-black border border-white" />
+              <div className="w-3.5 h-3.5 rounded-full bg-black border-2 border-[#16a34a]" />
               <span>Tiang Exist</span>
             </button>
 
@@ -1823,6 +1823,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                       renderPoleSvg({
                         material: node.materialTiang || "Beton",
                         isExisting: node.type === "tiang-existing",
+                        isLast: node.posisiTiang === "Ujung",
                         isSelected,
                         size: 17,
                       })

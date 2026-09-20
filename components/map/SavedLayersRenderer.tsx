@@ -6,6 +6,7 @@ import * as turf from "@turf/turf";
 import type { NetworkLayer, Connection, ConnectFirstState, JunctionInfo, DragSource, DragTarget, GarduConfig } from "../../types/spark";
 import { getLayerColor } from "../../lib/layerColors";
 import { buildSchoorSvg, buildGarduSvg } from "../../lib/svgUtils";
+import { getPoleStyle } from "../../lib/assetStyles";
 
 interface Props {
   savedLayers: NetworkLayer[];
@@ -365,9 +366,16 @@ export default function SavedLayersRenderer({
                 const bj = savedLayers.find(l => l.id === j.branchLayerId)?.jenisJaringan;
                 return bj === "SKTM" || bj === "SKTR";
               });
-              const sz = 17;
-              const bg = layer.statusJaringan === "Existing" ? lc : "white";
-              const bd = layer.statusJaringan === "Existing" ? "white" : lc;
+              const poleStyle = getPoleStyle({
+                material: layer.materialTiang,
+                status: layer.statusJaringan,
+                isExisting: layer.statusJaringan === "Existing",
+                isLast: isLastP,
+                size: 17,
+              });
+              const sz = poleStyle.size;
+              const bg = poleStyle.bg;
+              const bd = poleStyle.border;
 
               const schoor = layer.schoors[idx];
               const schoorHtml = schoor
@@ -390,7 +398,7 @@ export default function SavedLayersRenderer({
               }
 
               const terminasiDiamondSvg = (fill: string, stroke: string, label = "T") =>
-                `<svg width="${sz*2}" height="${sz*2}" viewBox="-${sz} -${sz} ${sz*2} ${sz*2}" style="overflow:visible;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10;"><polygon points="0,-${sz*0.85} ${sz*0.85},0 0,${sz*0.85} -${sz*0.85},0" fill="${fill}" stroke="${stroke}" stroke-width="2.5"/><text x="0" y="1" text-anchor="middle" dominant-baseline="middle" font-size="${sz*0.5}" font-weight="900" fill="${stroke}" font-family="monospace">${label}</text></svg>`;
+                `<svg width="${sz*2}" height="${sz*2}" viewBox="-${sz} -${sz} ${sz*2} ${sz*2}" style="overflow:visible;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10;"><polygon points="0,-${sz*0.85} ${sz*0.85},0 0,${sz*0.85} -${sz*0.85},0" fill="${fill}" stroke="${stroke}" stroke-width="${poleStyle.borderWidth}"/><text x="0" y="1" text-anchor="middle" dominant-baseline="middle" font-size="${sz*0.5}" font-weight="900" fill="${poleStyle.isExisting ? "#ffffff" : stroke}" font-family="monospace">${label}</text></svg>`;
 
               // Hitung SKUTM construction type (angle sudah tersedia di atas)
               let skutmType = "";
@@ -409,17 +417,17 @@ export default function SavedLayersRenderer({
               const isSkutmTerminasi = isSkutm && (skutmType === "Trm" || skutmType === "2xTrm");
 
               const poleBodyHtml = overrideToTerminasi
-                ? terminasiDiamondSvg(bg === "white" ? "white" : lc, bg === "white" ? lc : "white")
+                ? terminasiDiamondSvg(bg, bd)
                 : isSkutmTerminasi
-                ? terminasiDiamondSvg(bg === "white" ? "white" : lc, bg === "white" ? lc : "white", skutmType === "2xTrm" ? "2T" : "T")
+                ? terminasiDiamondSvg(bg, bd, skutmType === "2xTrm" ? "2T" : "T")
                 : isKT
                 ? (() => {
-                    if (isTerminasi) return terminasiDiamondSvg(bg === "white" ? "white" : lc, bg === "white" ? lc : "white");
+                    if (isTerminasi) return terminasiDiamondSvg(bg, bd);
                     const r = sz * 0.85;
                     const pts = Array.from({ length: 8 }, (_, i) => { const a = (i * 45 - 22.5) * Math.PI / 180; return `${(r * Math.cos(a)).toFixed(1)},${(r * Math.sin(a)).toFixed(1)}`; }).join(" ");
-                    return `<svg width="${sz*2}" height="${sz*2}" viewBox="-${sz} -${sz} ${sz*2} ${sz*2}" style="overflow:visible;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10;"><polygon points="${pts}" fill="${bg === "white" ? "white" : lc}" stroke="${bg === "white" ? lc : "white"}" stroke-width="2"/><text x="0" y="1" text-anchor="middle" dominant-baseline="middle" font-size="${sz*0.55}" font-weight="900" fill="${bg === "white" ? lc : "white"}" font-family="monospace">J</text></svg>`;
+                    return `<svg width="${sz*2}" height="${sz*2}" viewBox="-${sz} -${sz} ${sz*2} ${sz*2}" style="overflow:visible;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10;"><polygon points="${pts}" fill="${bg}" stroke="${bd}" stroke-width="${poleStyle.borderWidth}"/><text x="0" y="1" text-anchor="middle" dominant-baseline="middle" font-size="${sz*0.55}" font-weight="900" fill="${poleStyle.isExisting ? "#ffffff" : bd}" font-family="monospace">J</text></svg>`;
                   })()
-                : `<div style="width:${sz}px;height:${sz}px;background:${bg};border:2px solid ${bd};border-radius:50%;box-shadow:0 2px 4px rgba(0,0,0,0.4);position:relative;z-index:10;"></div>`;
+                : `<div style="width:${sz}px;height:${sz}px;background:${bg};border:${poleStyle.borderWidth}px solid ${bd};border-radius:50%;${poleStyle.isLast ? `box-shadow:0 0 0 2.5px #ff5722, 0 2px 6px rgba(0,0,0,0.5);` : `box-shadow:0 2px 4px rgba(0,0,0,0.4);`}position:relative;z-index:10;"></div>`;
 
               const isConnectTarget = connectMode;
               const isConnectFirstPole = connectFirst !== null && connectFirst.layerId === layer.id && connectFirst.poleIdx === idx;

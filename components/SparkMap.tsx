@@ -12,7 +12,7 @@ import type { GarduConfig, SchoorConfig, NetworkLayer, Connection, SnapInfo, Con
 import { haversineMeters } from "../lib/geo";
 import { countPoleTypes, computePoleTypes } from "../lib/computePoleData";
 import { buildGarduSvg, buildSchoorSvg } from "../lib/svgUtils";
-import { getValidTiangCombo } from "../lib/assetStyles";
+import { getValidTiangCombo, getPoleStyle } from "../lib/assetStyles";
 
 import MapClickHandler from "./map/MapClickHandler";
 import MapFlyTo from "./map/MapFlyTo";
@@ -1581,40 +1581,40 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
   // ─── Line color / style ───────────────────────────────────────────────────
   let lineColor = "red"; let lineColor2: string | null = null; let lineColor3: string | null = null;
   let isDashed = false; let isDashed2 = false; let isDashed3 = false;
-  let poleBackground = "#ffeb3b"; let poleBorder = "black"; let basePoleSize = 17;
+  let basePoleSize = 17;
 
   if (jenisJaringan === "SUTM" && statusJaringan === "Existing") {
-    lineColor = "black"; poleBackground = "black"; poleBorder = "white";
+    lineColor = "black";
   } else if (jenisJaringan === "SKUTR" && statusJaringan === "Existing") {
-    lineColor = "black"; isDashed = true; poleBackground = "black"; poleBorder = "white";
+    lineColor = "black"; isDashed = true;
   } else if (jenisJaringan === "SUTM" && statusJaringan === "Perluasan") {
-    lineColor = "blue"; poleBackground = "white"; poleBorder = "blue";
+    lineColor = "blue";
   } else if (jenisJaringan === "SKUTR" && statusJaringan === "Perluasan") {
-    lineColor = "blue"; isDashed = true; poleBackground = "blue"; poleBorder = "white";
+    lineColor = "blue"; isDashed = true;
   } else if (jenisJaringan === "SUTM + SKUTR" && statusJaringan === "Existing") {
-    lineColor = "black"; lineColor2 = "black"; isDashed2 = true; poleBackground = "black"; poleBorder = "white";
+    lineColor = "black"; lineColor2 = "black"; isDashed2 = true;
   } else if (jenisJaringan === "SUTM + SKUTR" && statusJaringan === "Perluasan") {
-    lineColor = "blue"; lineColor2 = "darkgreen"; isDashed2 = true; poleBackground = "linear-gradient(135deg, blue 50%, darkgreen 50%)"; poleBorder = "white";
+    lineColor = "blue"; lineColor2 = "darkgreen"; isDashed2 = true;
   } else if (jenisJaringan === "SUTM Underbuild (2 Jaringan)" && statusJaringan === "Existing") {
-    lineColor = "black"; lineColor2 = "black"; poleBackground = "black"; poleBorder = "white";
+    lineColor = "black"; lineColor2 = "black";
   } else if (jenisJaringan === "SUTM Underbuild (2 Jaringan)" && statusJaringan === "Perluasan") {
-    lineColor = "blue"; lineColor2 = "blue"; poleBackground = "white"; poleBorder = "blue";
+    lineColor = "blue"; lineColor2 = "blue";
   } else if (jenisJaringan === "SUTM Underbuild (3 Jaringan)" && statusJaringan === "Existing") {
-    lineColor = "black"; lineColor2 = "black"; lineColor3 = "black"; poleBackground = "black"; poleBorder = "white";
+    lineColor = "black"; lineColor2 = "black"; lineColor3 = "black";
   } else if (jenisJaringan === "SUTM Underbuild (3 Jaringan)" && statusJaringan === "Perluasan") {
-    lineColor = "blue"; lineColor2 = "blue"; lineColor3 = "blue"; poleBackground = "white"; poleBorder = "blue";
+    lineColor = "blue"; lineColor2 = "blue"; lineColor3 = "blue";
   } else if (jenisJaringan === "SKUTM" && statusJaringan === "Existing") {
-    lineColor = "#6d28d9"; poleBackground = "#6d28d9"; poleBorder = "white";
+    lineColor = "#6d28d9";
   } else if (jenisJaringan === "SKUTM" && statusJaringan === "Perluasan") {
-    lineColor = "#7c3aed"; poleBackground = "white"; poleBorder = "#7c3aed";
+    lineColor = "#7c3aed";
   } else if (jenisJaringan === "SKTM" && statusJaringan === "Existing") {
-    lineColor = "#7c2d12"; poleBackground = "#7c2d12"; poleBorder = "white";
+    lineColor = "#7c2d12";
   } else if (jenisJaringan === "SKTM" && statusJaringan === "Perluasan") {
-    lineColor = "#b45309"; poleBackground = "white"; poleBorder = "#b45309";
+    lineColor = "#b45309";
   } else if (jenisJaringan === "SKTR" && statusJaringan === "Existing") {
-    lineColor = "#166534"; poleBackground = "#166534"; poleBorder = "white";
+    lineColor = "#166534";
   } else if (jenisJaringan === "SKTR" && statusJaringan === "Perluasan") {
-    lineColor = "#15803d"; poleBackground = "white"; poleBorder = "#15803d";
+    lineColor = "#15803d";
   }
 
   let line2Coords: [number, number][] | null = null;
@@ -1945,9 +1945,17 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
               }
             }
 
+            const activePoleStyle = getPoleStyle({
+              material: materialTiang,
+              status: statusJaringan,
+              isExisting: statusJaringan === "Existing",
+              isLast,
+              size: 17,
+            });
+            const poleSize = activePoleStyle.size;
+            const currentPoleBorder = activePoleStyle.border;
+            const currentPoleBackground = activePoleStyle.bg;
             const outwardAngleGrounding = poleBearing + (offsetSide > 0 ? 90 : -90);
-            const poleSize = isLast ? basePoleSize + 4 : basePoleSize;
-            const currentPoleBorder = isLast ? "#ff5722" : poleBorder;
             const groundingOffset = poleSize / 2 + 9;
             const isArrester = jenisJaringan.includes("SUTM") || jenisJaringan === "SKUTM";
             const isSkutmTerminasi = jenisJaringan === "SKUTM" && (pData.skutmTypeShort === "Trm" || pData.skutmTypeShort === "2xTrm");
@@ -2001,18 +2009,18 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
                     const s = poleSize;
                     if (isTerminasi) {
                       return `<svg width="${s*2}" height="${s*2}" viewBox="-${s} -${s} ${s*2} ${s*2}" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);overflow:visible;z-index:10;">
-                        <polygon points="0,-${s*0.85} ${s*0.85},0 0,${s*0.85} -${s*0.85},0" fill="${poleBackground === "white" ? "white" : lineColor}" stroke="${poleBackground === "white" ? lineColor : "white"}" stroke-width="2.5"/>
-                        <text x="0" y="1" text-anchor="middle" dominant-baseline="middle" font-size="${s*0.5}" font-weight="900" fill="${poleBackground === "white" ? lineColor : "white"}" font-family="monospace">${label}</text>
+                        <polygon points="0,-${s*0.85} ${s*0.85},0 0,${s*0.85} -${s*0.85},0" fill="${currentPoleBackground}" stroke="${currentPoleBorder}" stroke-width="${activePoleStyle.borderWidth}"/>
+                        <text x="0" y="1" text-anchor="middle" dominant-baseline="middle" font-size="${s*0.5}" font-weight="900" fill="${activePoleStyle.isExisting ? "white" : currentPoleBorder}" font-family="monospace">${label}</text>
                       </svg>`;
                     } else {
                       const r = s * 0.85;
                       const pts = Array.from({ length: 8 }, (_, i) => { const a = (i * 45 - 22.5) * Math.PI / 180; return `${(r * Math.cos(a)).toFixed(1)},${(r * Math.sin(a)).toFixed(1)}`; }).join(" ");
                       return `<svg width="${s*2}" height="${s*2}" viewBox="-${s} -${s} ${s*2} ${s*2}" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);overflow:visible;z-index:10;">
-                        <polygon points="${pts}" fill="${poleBackground === "white" ? "white" : lineColor}" stroke="${poleBackground === "white" ? lineColor : "white"}" stroke-width="2"/>
-                        <text x="0" y="1" text-anchor="middle" dominant-baseline="middle" font-size="${s*0.55}" font-weight="900" fill="${poleBackground === "white" ? lineColor : "white"}" font-family="monospace">J</text>
+                        <polygon points="${pts}" fill="${currentPoleBackground}" stroke="${currentPoleBorder}" stroke-width="${activePoleStyle.borderWidth}"/>
+                        <text x="0" y="1" text-anchor="middle" dominant-baseline="middle" font-size="${s*0.55}" font-weight="900" fill="${activePoleStyle.isExisting ? "white" : currentPoleBorder}" font-family="monospace">J</text>
                       </svg>`;
                     }
-                  })() : `<div style="background: ${poleBackground}; border: ${isLast ? "3px" : "2px"} solid ${currentPoleBorder}; width: 100%; height: 100%; border-radius: 50%; box-shadow: 0px 2px 4px rgba(0,0,0,0.5); position: relative; z-index: 10;"></div>`}
+                  })() : `<div style="background: ${currentPoleBackground}; border: ${activePoleStyle.borderWidth}px solid ${currentPoleBorder}; width: 100%; height: 100%; border-radius: 50%; ${activePoleStyle.isLast ? `box-shadow: 0 0 0 2.5px #ff5722, 0 2px 6px rgba(0,0,0,0.5);` : `box-shadow: 0px 2px 4px rgba(0,0,0,0.5);`} position: relative; z-index: 10;"></div>`}
                   ${isSkutmTerminasi ? `
                     <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(${outwardAngleGrounding}deg) translateY(-${groundingOffset}px); color: black; pointer-events: none; z-index: 5;">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${lineColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(1px 1px 0px white);"><path d="M12 24v-6"/><path d="M8 18h8"/><path d="M8 14h8"/><path d="M12 14v-4"/><path d="M4 10h16"/><path d="M7 6h10"/><path d="M10 2h4"/></svg>

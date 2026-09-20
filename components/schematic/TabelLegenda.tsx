@@ -18,12 +18,24 @@ export default function TabelLegenda({ schematic }: Props) {
     // 1. Tiang Existing (●)
     const existingPoles = nodes.filter(n => n.type === "tiang-existing");
     if (existingPoles.length > 0) {
-      list.push({
-        id: "tiang-exist",
-        simbolType: "tiang-existing",
-        uraian: "Tiang Existing",
-        vol: existingPoles.length,
-        sat: "btg",
+      const existSpecs = new Map<string, { count: number; isBaja: boolean }>();
+      existingPoles.forEach(p => {
+        const isBaja = (p.materialTiang || "Beton").toLowerCase().includes("baja");
+        const mat = isBaja ? "Baja" : "Beton";
+        const key = `Tiang Existing (${mat})`;
+        const cur = existSpecs.get(key);
+        if (cur) cur.count += 1;
+        else existSpecs.set(key, { count: 1, isBaja });
+      });
+
+      existSpecs.forEach((val, desc) => {
+        list.push({
+          id: `tiang-exist-${val.isBaja ? "baja" : "beton"}`,
+          simbolType: val.isBaja ? "tiang-existing-baja" : "tiang-existing-beton",
+          uraian: desc,
+          vol: val.count,
+          sat: "btg",
+        });
       });
     }
 
@@ -217,23 +229,31 @@ export default function TabelLegenda({ schematic }: Props) {
   const renderIcon = (type: string) => {
     switch (type) {
       case "tiang-existing":
+      case "tiang-existing-beton":
         return (
           <svg width="16" height="16" viewBox="-10 -10 20 20" className="flex-shrink-0">
-            <circle r="8" fill="#000000" stroke="#ffffff" strokeWidth="2" />
+            <circle r="8" fill="#000000" stroke="#16a34a" strokeWidth="2" />
+          </svg>
+        );
+
+      case "tiang-existing-baja":
+        return (
+          <svg width="16" height="16" viewBox="-10 -10 20 20" className="flex-shrink-0">
+            <circle r="8" fill="#000000" stroke="#9ca3af" strokeWidth="2" />
           </svg>
         );
 
       case "tiang-beton":
         return (
           <svg width="16" height="16" viewBox="-10 -10 20 20" className="flex-shrink-0">
-            <circle r="8" fill="#ffeb3b" stroke="#000000" strokeWidth="2" />
+            <circle r="8" fill="#ffffff" stroke="#16a34a" strokeWidth="2" />
           </svg>
         );
 
       case "tiang-baja":
         return (
           <svg width="16" height="16" viewBox="-10 -10 20 20" className="flex-shrink-0">
-            <circle r="8" fill="#ffeb3b" stroke="#000000" strokeWidth="2" />
+            <circle r="8" fill="#ffffff" stroke="#9ca3af" strokeWidth="2" />
           </svg>
         );
 
@@ -257,7 +277,7 @@ export default function TabelLegenda({ schematic }: Props) {
       case "treck-standar":
         return (
           <svg width="18" height="18" viewBox="-25 -25 50 50" className="flex-shrink-0">
-            <circle cx="0" cy="0" r="4" fill="#ffeb3b" stroke="#000" strokeWidth="1.5" />
+            <circle cx="0" cy="0" r="4" fill="#ffffff" stroke="#16a34a" strokeWidth="1.5" />
             <line x1="0" y1="-4" x2="0" y2="-22" stroke={SPARK_ASSET_COLORS.SCHOOR.treck} strokeWidth="2.5" strokeLinecap="round" />
             <polygon points="-4,-14 0,-22 4,-14" fill={SPARK_ASSET_COLORS.SCHOOR.treck} />
           </svg>
@@ -266,7 +286,7 @@ export default function TabelLegenda({ schematic }: Props) {
       case "treck-tolak-pinggang":
         return (
           <svg width="20" height="20" viewBox="-25 -25 50 50" className="flex-shrink-0">
-            <circle cx="0" cy="0" r="4" fill="#ffeb3b" stroke="#000" strokeWidth="1.5" />
+            <circle cx="0" cy="0" r="4" fill="#ffffff" stroke="#16a34a" strokeWidth="1.5" />
             <line x1="0" y1="-10" x2="8" y2="-10" stroke={SPARK_ASSET_COLORS.SCHOOR.treck} strokeWidth="2" />
             <line x1="0" y1="-4" x2="8" y2="-10" stroke={SPARK_ASSET_COLORS.SCHOOR.treck} strokeWidth="2" />
             <line x1="8" y1="-10" x2="0" y2="-22" stroke={SPARK_ASSET_COLORS.SCHOOR.treck} strokeWidth="2" />
@@ -277,7 +297,7 @@ export default function TabelLegenda({ schematic }: Props) {
       case "druck":
         return (
           <svg width="18" height="18" viewBox="-25 -25 50 50" className="flex-shrink-0">
-            <circle cx="0" cy="0" r="4" fill="#ffeb3b" stroke="#000" strokeWidth="1.5" />
+            <circle cx="0" cy="0" r="4" fill="#ffffff" stroke="#16a34a" strokeWidth="1.5" />
             <line x1="0" y1="-20" x2="0" y2="-4" stroke={SPARK_ASSET_COLORS.SCHOOR.druck} strokeWidth="2.5" strokeLinecap="round" />
             <polygon points="-4,-12 0,-4 4,-12" fill={SPARK_ASSET_COLORS.SCHOOR.druck} />
           </svg>
@@ -286,7 +306,7 @@ export default function TabelLegenda({ schematic }: Props) {
       case "kontramast":
         return (
           <svg width="20" height="20" viewBox="-15 -35 30 50" className="flex-shrink-0">
-            <circle cx="0" cy="0" r="3.5" fill="#ffeb3b" stroke="#000" strokeWidth="1.5" />
+            <circle cx="0" cy="0" r="3.5" fill="#ffffff" stroke="#16a34a" strokeWidth="1.5" />
             <line x1="0" y1="-4" x2="0" y2="-18" stroke={SPARK_ASSET_COLORS.SCHOOR.kontramast} strokeWidth="1.5" strokeDasharray="3 2" />
             <circle cx="0" cy="-21" r="3.5" fill="white" stroke={SPARK_ASSET_COLORS.SCHOOR.kontramast} strokeWidth="2" />
             <line x1="0" y1="-25" x2="0" y2="-34" stroke={SPARK_ASSET_COLORS.SCHOOR.kontramast} strokeWidth="2" />

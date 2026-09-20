@@ -8,13 +8,16 @@ import type { GarduConfig, SchoorConfig } from "../types/spark";
  */
 
 export const SPARK_ASSET_COLORS = {
-  // 1. Tiang
+  // 1. Tiang (Skema Warna Baru SPARK 2026)
+  // Fill = Status Jaringan (Putih = Rencana, Hitam = Existing)
+  // Border = Material Tiang (Hijau = Beton, Abu-abu/Silver = Baja/Besi)
   POLE: {
     size: 17,
-    rencanaBg: "#ffeb3b", // Kuning khas SparkMap.tsx
-    rencanaBorder: "#000000",
-    existingBg: "#000000",
-    existingBorder: "#ffffff",
+    rencanaBg: "#ffffff",      // Putih untuk status Rencana
+    existingBg: "#000000",     // Hitam untuk status Existing
+    borderBeton: "#16a34a",    // Hijau untuk Tiang Beton
+    borderBaja: "#9ca3af",     // Abu-abu/Silver untuk Tiang Baja
+    lastAccentRing: "#ff5722", // Aksen oranye khusus Tiang Ujung (Dead-end)
     selectedHalo: "#f97316",
     selectedRing: "#ff5722",
   },
@@ -67,19 +70,29 @@ export const ASSET_COLORS = {
     text: "#7e22ce",
   },
   TIANG_TM: {
-    border: "#000000",
-    core: "#ffeb3b",
-    color: "#000000",
+    border: "#16a34a",
+    core: "#ffffff",
+    color: "#16a34a",
   },
   TIANG_TR: {
-    border: "#0284c7",
+    border: "#16a34a",
     core: "#ffffff",
-    color: "#0284c7",
+    color: "#16a34a",
   },
   TIANG_EXISTING: {
-    border: "#ffffff",
+    border: "#16a34a",
     core: "#000000",
-    color: "#000000",
+    color: "#16a34a",
+  },
+  TIANG_BAJA_RENCANA: {
+    border: "#9ca3af",
+    core: "#ffffff",
+    color: "#9ca3af",
+  },
+  TIANG_BAJA_EXISTING: {
+    border: "#9ca3af",
+    core: "#000000",
+    color: "#9ca3af",
   },
   KABEL_TM: {
     stroke: "#dc2626",
@@ -147,37 +160,103 @@ export function getCableStyle(jenisJaringan: string = "SUTM", isExisting: boolea
 /**
  * Render Simbol Tiang (Beton / Baja / Existing / Terminasi)
  */
+/**
+ * Parameter untuk kalkulasi style tiang
+ */
+export interface PoleStyleParams {
+  material?: string;
+  status?: string;
+  isExisting?: boolean;
+  isLast?: boolean;
+  size?: number;
+}
+
+export interface PoleStyleResult {
+  bg: string;
+  border: string;
+  size: number;
+  borderWidth: number;
+  isExisting: boolean;
+  isBaja: boolean;
+  isLast: boolean;
+  accentRingColor: string | null;
+}
+
+/**
+ * Single Source of Truth untuk styling Tiang di SPARK:
+ * 1. Fill (isi lingkaran):
+ *    - Rencana: Putih (#ffffff)
+ *    - Existing: Hitam (#000000)
+ * 2. Border (garis tepi):
+ *    - Beton: Hijau (#16a34a)
+ *    - Baja/Besi: Abu-abu/Silver (#9ca3af)
+ * 3. Tiang Ujung (isLast / Dead-end):
+ *    - Ukuran lebih besar (21px vs 17px)
+ *    - Border lebih tebal (3px vs 2px)
+ *    - Aksen ring oranye (#ff5722)
+ */
+export function getPoleStyle({
+  material = "Beton",
+  status = "Rencana",
+  isExisting,
+  isLast = false,
+  size = 17,
+}: PoleStyleParams): PoleStyleResult {
+  const existing = isExisting !== undefined
+    ? isExisting
+    : (status ? status.toLowerCase().includes("exist") : false);
+  const isBaja = material.toLowerCase().includes("baja") || material.toLowerCase().includes("besi");
+
+  const bg = existing ? SPARK_ASSET_COLORS.POLE.existingBg : SPARK_ASSET_COLORS.POLE.rencanaBg;
+  const border = isBaja ? SPARK_ASSET_COLORS.POLE.borderBaja : SPARK_ASSET_COLORS.POLE.borderBeton;
+  const finalSize = isLast ? size + 4 : size;
+  const borderWidth = isLast ? 3 : 2;
+
+  return {
+    bg,
+    border,
+    size: finalSize,
+    borderWidth,
+    isExisting: existing,
+    isBaja,
+    isLast,
+    accentRingColor: isLast ? SPARK_ASSET_COLORS.POLE.lastAccentRing : null,
+  };
+}
+
+/**
+ * Render Simbol Tiang (Beton / Baja / Existing / Terminasi)
+ */
 export function renderPoleSvg({
   material = "Beton",
-  isExisting = false,
+  status = "Rencana",
+  isExisting,
   isTerminasi = false,
   isLast = false,
   isSelected = false,
   size = 17,
 }: {
   material?: string;
+  status?: string;
   isExisting?: boolean;
   isTerminasi?: boolean;
   isLast?: boolean;
   isSelected?: boolean;
   size?: number;
 }) {
+  const style = getPoleStyle({ material, status, isExisting, isLast, size });
   const r = size / 2;
-  const isBaja = material.toLowerCase().includes("baja") || material.toLowerCase().includes("besi");
-  const bg = isExisting ? "#000000" : "#ffeb3b";
-  const border = isLast ? "#ff5722" : isExisting ? "#ffffff" : "#000000";
-  const strokeW = isLast ? 3 : 2;
 
-  // Diamond shape jika terminasi kabel tanah (Persis SparkMap.tsx baris 1701)
+  // Diamond shape jika terminasi kabel tanah (Persis SparkMap.tsx)
   if (isTerminasi) {
     const s = r * 1.5;
     return (
       <g>
         <polygon
           points={`0,-${s * 0.85} ${s * 0.85},0 0,${s * 0.85} -${s * 0.85},0`}
-          fill={bg}
-          stroke={border}
-          strokeWidth={strokeW}
+          fill={style.bg}
+          stroke={style.border}
+          strokeWidth={style.borderWidth}
         />
         <text
           x="0"
@@ -186,7 +265,7 @@ export function renderPoleSvg({
           dominantBaseline="middle"
           fontSize={s * 0.55}
           fontWeight="900"
-          fill={border}
+          fill={style.isExisting ? "#ffffff" : style.border}
           fontFamily="monospace"
         >
           T
@@ -197,12 +276,22 @@ export function renderPoleSvg({
 
   return (
     <g>
-      {/* Circle Tiang (Identik untuk Beton dan Baja: Kuning untuk rencana, Hitam untuk existing) */}
+      {/* Aksen Tiang Ujung (Outer orange accent ring) */}
+      {style.isLast && (
+        <circle
+          r={r + 3}
+          fill="none"
+          stroke={style.accentRingColor || "#ff5722"}
+          strokeWidth={2}
+          strokeDasharray="3,2"
+        />
+      )}
+      {/* Circle Tiang: Fill Status (Putih/Hitam) + Border Material (Hijau/Abu-abu) */}
       <circle
         r={r}
-        fill={bg}
-        stroke={border}
-        strokeWidth={strokeW}
+        fill={style.bg}
+        stroke={style.border}
+        strokeWidth={style.borderWidth}
       />
     </g>
   );

@@ -18,10 +18,10 @@ const fixLeafletIcons = () => {
   });
 };
 
-import { ASSET_COLORS } from "../../lib/assetStyles";
+import { ASSET_COLORS, getPoleStyle } from "../../lib/assetStyles";
 
 // Custom SVG Icons for Assets
-const createAssetIcon = (type: string, status: string, isSelected: boolean) => {
+const createAssetIcon = (type: string, status: string, isSelected: boolean, properties?: Record<string, any>) => {
   let color = "#6b7280"; // gray fallback
   let html = "";
   const borderSize = isSelected ? `3px solid ${ASSET_COLORS.SELECTED.stroke}` : "2px solid white";
@@ -45,26 +45,19 @@ const createAssetIcon = (type: string, status: string, isSelected: boolean) => {
         <polygon points="12,2 2,22 22,22" fill="${ASSET_COLORS.GARDU.fill}" />
       </svg>
     </div>`;
-  } else if (type === "tiang TM") {
-    // Medium Voltage Pole (black circle with yellow core)
-    color = ASSET_COLORS.TIANG_TM.color;
+  } else if (type === "tiang TM" || type === "tiang TR" || type.toLowerCase().includes("tiang")) {
+    const isExisting = status?.toLowerCase() === "existing";
+    const material = properties?.material || properties?.tipe || "Beton";
+    const poleStyle = getPoleStyle({
+      material,
+      isExisting,
+      size: type === "tiang TM" ? 18 : 16,
+    });
     html = `<div style="
-      width: 18px;
-      height: 18px;
-      background: ${ASSET_COLORS.TIANG_TM.core};
-      border: 3px solid ${color};
-      border-radius: 50%;
-      ${isSelected ? `outline: 3px solid ${ASSET_COLORS.SELECTED.stroke};` : ""}
-      ${shadow};
-    "></div>`;
-  } else if (type === "tiang TR") {
-    // Low Voltage Pole (blue circle with white core)
-    color = ASSET_COLORS.TIANG_TR.color;
-    html = `<div style="
-      width: 16px;
-      height: 16px;
-      background: ${ASSET_COLORS.TIANG_TR.core};
-      border: 3px solid ${color};
+      width: ${poleStyle.size}px;
+      height: ${poleStyle.size}px;
+      background: ${poleStyle.bg};
+      border: ${poleStyle.borderWidth}px solid ${poleStyle.border};
       border-radius: 50%;
       ${isSelected ? `outline: 3px solid ${ASSET_COLORS.SELECTED.stroke};` : ""}
       ${shadow};
@@ -335,7 +328,7 @@ export default function FieldMap({ recenterTrigger }: FieldMapProps) {
             <Marker
               key={asset.id}
               position={[asset.latitude, asset.longitude]}
-              icon={createAssetIcon(asset.asset_type, asset.status, isSelected)}
+              icon={createAssetIcon(asset.asset_type, asset.status, isSelected, asset.properties)}
               zIndexOffset={isSelected ? 500 : 100}
               eventHandlers={{
                 click: (e) => {
