@@ -270,18 +270,41 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
 
-  // Snap to grid
+  // Interface untuk Smart Alignment Guides (Visio/Figma style)
+  interface SmartGuide {
+    id: string;
+    type: "x" | "y" | "road";
+    x?: number;
+    y?: number;
+    y1?: number;
+    y2?: number;
+    refY1?: number;
+    refY2?: number;
+    x1?: number;
+    x2?: number;
+    refX1?: number;
+    refX2?: number;
+    roadSegment?: { x1: number; y1: number; x2: number; y2: number };
+    projX?: number;
+    projY?: number;
+    roadName?: string;
+    dist?: number;
+  }
+
+  // Snap to grid & Smart Guides
   const [snapGrid, setSnapGrid] = useState(true);
-  const GRID_SIZE = 20;
+  const [gridSize, setGridSize] = useState<number>(8); // Default 8px (halus & presisi)
+  const [smartGuides, setSmartGuides] = useState(true); // Default ON
+  const [activeGuides, setActiveGuides] = useState<SmartGuide[]>([]);
 
   const svgRef = useRef<SVGSVGElement>(null);
   // Guard flag untuk mencegah handleCanvasClick menghapus seleksi setelah drag seleksi selesai
   const hasSelectedJustFinishedRef = useRef(false);
 
-  // Helper snap
-  const snap = useCallback((val: number) => {
-    return snapGrid ? Math.round(val / GRID_SIZE) * GRID_SIZE : val;
-  }, [snapGrid]);
+  // Helper snap (dukung bypass Alt/Shift)
+  const snap = useCallback((val: number, bypass = false) => {
+    return !bypass && snapGrid ? Math.round(val / gridSize) * gridSize : val;
+  }, [snapGrid, gridSize]);
 
   // Convert client coordinate to SVG viewBox coordinate
   const getCanvasCoords = useCallback((e: React.MouseEvent) => {
@@ -1315,8 +1338,9 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
     if (draggingObstacleId && obstacleDragStartSnapshot && obstacleDragStartCoords) {
       const rawDx = coords.x - obstacleDragStartCoords.x;
       const rawDy = coords.y - obstacleDragStartCoords.y;
-      const dx = snap(rawDx);
-      const dy = snap(rawDy);
+      const bypass = e.altKey || (e.shiftKey && !e.ctrlKey);
+      const dx = bypass ? rawDx : snap(rawDx);
+      const dy = bypass ? rawDy : snap(rawDy);
 
       onChange({
         ...schematic,
@@ -1356,8 +1380,9 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
 
     // Gardu on-canvas offset dragging
     if (offsettingGarduNodeId && offsetDragStart) {
-      const dx = snap(coords.x - offsetDragStart.x);
-      const dy = snap(coords.y - offsetDragStart.y);
+      const bypass = e.altKey || (e.shiftKey && !e.ctrlKey);
+      const dx = bypass ? (coords.x - offsetDragStart.x) : snap(coords.x - offsetDragStart.x);
+      const dy = bypass ? (coords.y - offsetDragStart.y) : snap(coords.y - offsetDragStart.y);
       onChange({
         ...schematic,
         nodes: nodes.map(n => n.id === offsettingGarduNodeId ? {
@@ -1369,12 +1394,167 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
       return;
     }
 
-    // Multi-node dragging
+    // Multi-node dragging dengan Smart Alignment Guides & Finer Snap
     if (draggingNodeId && dragStartSnapshot && dragStartCoords) {
       const rawDx = coords.x - dragStartCoords.x;
       const rawDy = coords.y - dragStartCoords.y;
-      const dx = snap(rawDx);
-      const dy = snap(rawDy);
+      const bypassSnap = e.altKey || (e.shiftKey && !e.ctrlKey);
+
+      const primaryOrig = dragStartSnapshot.find(s => s.id === draggingNodeId) || dragStartSnapshot[0];
+      const targetX = primaryOrig.x + rawDx;
+      const targetY = primaryOrig.y + rawDy;
+
+      let finalX = targetX;
+      let finalY = targetY;
+      const newGuides: SmartGuide[] = [];
+
+      if (bypassSnap) {
+        // Bebas total sub-pixel saat menahan Alt / Shift
+        finalX = targetX;
+        finalY = targetY;
+      } else {
+        let snappedByRoad = false;
+        let snappedByGuideX = false;
+        let snappedByGuideY = false;
+
+        if (smartGuides) {
+          // 1. Cek snapping ke garis jalan / gang (Obstacle road & alley)
+          if (schematic.obstacles && showObstacles) {
+            let closestRoadDist = Infinity;
+            let closestRoadSnap: {
+              projX: number;
+              projY: number;
+              p1: { x: number; y: number };
+              p2: { x: number; y: number };
+              name: string;
+            } | null = null;
+            const roadThreshold = Math.max(8, 14 / zoom);
+
+            for (const obs of schematic.obstacles) {
+              if ((obs.obstacleType === "road" || obs.obstacleType === "alley") && obs.points && obs.points.length >= 2) {
+                for (let i = 0; i < obs.points.length - 1; i++) {
+                  const p1 = obs.points[i];
+                  const p2 = obs.points[i + 1];
+                  const segDx = p2.x - p1.x;
+                  const segDy = p2.y - p1.y;
+                  const lenSq = segDx * segDx + segDy * segDy;
+                  if (lenSq > 0) {
+                    let t = ((targetX - p1.x) * segDx + (targetY - p1.y) * segDy) / lenSq;
+                    t = Math.max(0, Math.min(1, t));
+                    const projX = p1.x + t * segDx;
+                    const projY = p1.y + t * segDy;
+                    const dist = Math.hypot(targetX - projX, targetY - projY);
+                    if (dist <= roadThreshold && dist < closestRoadDist) {
+                      closestRoadDist = dist;
+                      closestRoadSnap = {
+                        projX: Math.round(projX),
+                        projY: Math.round(projY),
+                        p1,
+                        p2,
+                        name: obs.label || (obs.obstacleType === "road" ? "Jalan" : "Gang"),
+                      };
+                    }
+                  }
+                }
+              }
+            }
+
+            if (closestRoadSnap) {
+              finalX = closestRoadSnap.projX;
+              finalY = closestRoadSnap.projY;
+              snappedByRoad = true;
+              newGuides.push({
+                id: "road-align",
+                type: "road",
+                roadSegment: {
+                  x1: closestRoadSnap.p1.x,
+                  y1: closestRoadSnap.p1.y,
+                  x2: closestRoadSnap.p2.x,
+                  y2: closestRoadSnap.p2.y,
+                },
+                projX: closestRoadSnap.projX,
+                projY: closestRoadSnap.projY,
+                roadName: closestRoadSnap.name,
+              });
+            }
+          }
+
+          // 2. Cek snapping sejajar X dan Y dengan node lain di canvas
+          if (!snappedByRoad) {
+            const staticNodes = nodes.filter(n => !dragStartSnapshot.some(s => s.id === n.id));
+            const alignThreshold = Math.max(5, 8 / zoom);
+
+            // Vertikal (X sama)
+            let closestXDiff = Infinity;
+            let closestRefX: SchematicNode | null = null;
+            for (const n of staticNodes) {
+              const diff = Math.abs(n.x - targetX);
+              if (diff <= alignThreshold && diff < closestXDiff) {
+                closestXDiff = diff;
+                closestRefX = n;
+              }
+            }
+            if (closestRefX) {
+              finalX = closestRefX.x;
+              snappedByGuideX = true;
+              const minY = Math.min(closestRefX.y, targetY) - 50;
+              const maxY = Math.max(closestRefX.y, targetY) + 50;
+              newGuides.push({
+                id: `guide-x-${closestRefX.id}`,
+                type: "x",
+                x: closestRefX.x,
+                y1: minY,
+                y2: maxY,
+                refY1: closestRefX.y,
+                refY2: targetY,
+                dist: Math.round(Math.abs(closestRefX.y - targetY)),
+              });
+            }
+
+            // Horizontal (Y sama)
+            let closestYDiff = Infinity;
+            let closestRefY: SchematicNode | null = null;
+            for (const n of staticNodes) {
+              const diff = Math.abs(n.y - targetY);
+              if (diff <= alignThreshold && diff < closestYDiff) {
+                closestYDiff = diff;
+                closestRefY = n;
+              }
+            }
+            if (closestRefY) {
+              finalY = closestRefY.y;
+              snappedByGuideY = true;
+              const minX = Math.min(closestRefY.x, targetX) - 50;
+              const maxX = Math.max(closestRefY.x, targetX) + 50;
+              newGuides.push({
+                id: `guide-y-${closestRefY.id}`,
+                type: "y",
+                y: closestRefY.y,
+                x1: minX,
+                x2: maxX,
+                refX1: closestRefY.x,
+                refX2: targetX,
+                dist: Math.round(Math.abs(closestRefY.x - targetX)),
+              });
+            }
+          }
+        }
+
+        // 3. Fallback ke grid snap jika belum disnap oleh smart guide
+        if (!snappedByRoad) {
+          if (!snappedByGuideX) {
+            finalX = snapGrid ? Math.round(targetX / gridSize) * gridSize : Math.round(targetX);
+          }
+          if (!snappedByGuideY) {
+            finalY = snapGrid ? Math.round(targetY / gridSize) * gridSize : Math.round(targetY);
+          }
+        }
+      }
+
+      setActiveGuides(newGuides);
+
+      const dx = finalX - primaryOrig.x;
+      const dy = finalY - primaryOrig.y;
 
       onChange({
         ...schematic,
@@ -1413,6 +1593,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
 
   // Drag end: commit history jika node berpindah atau seleksi selesai
   const handleMouseUp = () => {
+    setActiveGuides([]);
     if (resizingObstacle) {
       pushState(schematic);
       setResizingObstacle(null);
@@ -2163,17 +2344,46 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
 
             <div className="h-5 w-px bg-slate-700 mx-0.5" />
 
-            {/* Grid Snap Toggle */}
+            {/* Grid Snap Toggle & Size */}
+            <div className="flex items-center bg-slate-800 rounded-lg border border-slate-700 p-0.5">
+              <button
+                onClick={() => setSnapGrid(v => !v)}
+                className={`px-2 py-1 rounded-md text-xs font-bold transition cursor-pointer ${
+                  snapGrid
+                    ? "bg-slate-700/80 text-emerald-400"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+                title="Toggle Snap Grid (Tahan Alt saat drag untuk bypass snap)"
+              >
+                Grid {snapGrid ? "ON" : "OFF"}
+              </button>
+              {snapGrid && (
+                <select
+                  value={gridSize}
+                  onChange={(e) => setGridSize(Number(e.target.value))}
+                  className="bg-slate-900 text-slate-300 text-[11px] font-semibold px-1 py-0.5 rounded ml-1 border border-slate-700 outline-none hover:border-slate-600 cursor-pointer"
+                  title="Ukuran interval snap grid"
+                >
+                  <option value={5}>5px</option>
+                  <option value={8}>8px</option>
+                  <option value={10}>10px</option>
+                  <option value={20}>20px</option>
+                </select>
+              )}
+            </div>
+
+            {/* Smart Alignment Guides Toggle (Figma / Visio Style) */}
             <button
-              onClick={() => setSnapGrid(v => !v)}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
-                snapGrid
-                  ? "bg-slate-800 text-emerald-400 border-emerald-500/40"
-                  : "bg-slate-800 text-slate-400 border-slate-700"
+              onClick={() => setSmartGuides(v => !v)}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer flex items-center gap-1 ${
+                smartGuides
+                  ? "bg-slate-800 text-pink-400 border-pink-500/40 shadow-xs"
+                  : "bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200"
               }`}
-              title="Toggle Snap Grid 20px"
+              title="Smart Alignment Guides (Figma/Visio style). Snap magnetik sejajar Tiang & Garis Jalan. Tahan Alt saat drag untuk gerak bebas."
             >
-              Grid {snapGrid ? "ON" : "OFF"}
+              <span>🧲</span>
+              <span>Guide {smartGuides ? "ON" : "OFF"}</span>
             </button>
 
             {/* Zoom Controls */}
@@ -2218,6 +2428,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
           onMouseUp={handleMouseUp}
           onClick={handleCanvasClick}
           onDoubleClick={handleCanvasDoubleClick}
+          onMouseLeave={() => { if (activeGuides.length > 0) setActiveGuides([]); }}
         >
           {/* Petunjuk aktif */}
           {!isPrinting && (
@@ -2391,9 +2602,9 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
             style={{ touchAction: "none" }}
           >
             <defs>
-              {/* Pola grid 20px */}
-              <pattern id="grid-pattern" width={GRID_SIZE} height={GRID_SIZE} patternUnits="userSpaceOnUse">
-                <circle cx={GRID_SIZE} cy={GRID_SIZE} r="1" fill="#E2E8F0" />
+              {/* Pola grid dinamis sesuai gridSize */}
+              <pattern id="grid-pattern" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
+                <circle cx={gridSize} cy={gridSize} r="1" fill="#CBD5E1" />
               </pattern>
             </defs>
 
@@ -2823,6 +3034,163 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                       ))}
                     </>
                   )}
+                </g>
+              )}
+
+              {/* ─── Layer 4: Smart Alignment Guides (Visio / Figma Style) ─── */}
+              {activeGuides.length > 0 && (
+                <g id="layer-smart-guides" pointerEvents="none">
+                  {activeGuides.map((g) => {
+                    if (g.type === "x" && g.x !== undefined && g.y1 !== undefined && g.y2 !== undefined) {
+                      return (
+                        <g key={g.id}>
+                          {/* Garis vertikal putus-putus */}
+                          <line
+                            x1={g.x}
+                            y1={g.y1}
+                            x2={g.x}
+                            y2={g.y2}
+                            stroke="#ec4899"
+                            strokeWidth={1.5 / zoom}
+                            strokeDasharray={`${5 / zoom},${3 / zoom}`}
+                          />
+                          {/* Titik jangkar pada node referensi & node aktif */}
+                          {g.refY1 !== undefined && (
+                            <circle cx={g.x} cy={g.refY1} r={3.5 / zoom} fill="#ec4899" stroke="#ffffff" strokeWidth={1 / zoom} />
+                          )}
+                          {g.refY2 !== undefined && (
+                            <circle cx={g.x} cy={g.refY2} r={3.5 / zoom} fill="#ec4899" stroke="#ffffff" strokeWidth={1 / zoom} />
+                          )}
+                          {/* Badge Jarak jika jarak cukup signifikan */}
+                          {g.dist !== undefined && g.dist > 25 && (
+                            <g transform={`translate(${g.x + 6 / zoom}, ${(g.y1 + g.y2) / 2})`}>
+                              <rect
+                                x={0}
+                                y={-8 / zoom}
+                                width={46 / zoom}
+                                height={16 / zoom}
+                                rx={3 / zoom}
+                                fill="#831843"
+                                opacity={0.9}
+                              />
+                              <text
+                                x={23 / zoom}
+                                y={3.5 / zoom}
+                                fill="#fbcfe8"
+                                fontSize={9 / zoom}
+                                fontWeight="bold"
+                                textAnchor="middle"
+                                fontFamily="sans-serif"
+                              >
+                                ↕ {g.dist}px
+                              </text>
+                            </g>
+                          )}
+                        </g>
+                      );
+                    }
+
+                    if (g.type === "y" && g.y !== undefined && g.x1 !== undefined && g.x2 !== undefined) {
+                      return (
+                        <g key={g.id}>
+                          {/* Garis horizontal putus-putus */}
+                          <line
+                            x1={g.x1}
+                            y1={g.y}
+                            x2={g.x2}
+                            y2={g.y}
+                            stroke="#ec4899"
+                            strokeWidth={1.5 / zoom}
+                            strokeDasharray={`${5 / zoom},${3 / zoom}`}
+                          />
+                          {/* Titik jangkar pada node referensi & node aktif */}
+                          {g.refX1 !== undefined && (
+                            <circle cx={g.refX1} cy={g.y} r={3.5 / zoom} fill="#ec4899" stroke="#ffffff" strokeWidth={1 / zoom} />
+                          )}
+                          {g.refX2 !== undefined && (
+                            <circle cx={g.refX2} cy={g.y} r={3.5 / zoom} fill="#ec4899" stroke="#ffffff" strokeWidth={1 / zoom} />
+                          )}
+                          {/* Badge Jarak jika jarak cukup signifikan */}
+                          {g.dist !== undefined && g.dist > 25 && (
+                            <g transform={`translate(${(g.x1 + g.x2) / 2}, ${g.y - 10 / zoom})`}>
+                              <rect
+                                x={-23 / zoom}
+                                y={-8 / zoom}
+                                width={46 / zoom}
+                                height={16 / zoom}
+                                rx={3 / zoom}
+                                fill="#831843"
+                                opacity={0.9}
+                              />
+                              <text
+                                x={0}
+                                y={3.5 / zoom}
+                                fill="#fbcfe8"
+                                fontSize={9 / zoom}
+                                fontWeight="bold"
+                                textAnchor="middle"
+                                fontFamily="sans-serif"
+                              >
+                                ↔ {g.dist}px
+                              </text>
+                            </g>
+                          )}
+                        </g>
+                      );
+                    }
+
+                    if (g.type === "road" && g.roadSegment && g.projX !== undefined && g.projY !== undefined) {
+                      return (
+                        <g key={g.id}>
+                          {/* Highlight segmen jalan yang sejajar */}
+                          <line
+                            x1={g.roadSegment.x1}
+                            y1={g.roadSegment.y1}
+                            x2={g.roadSegment.x2}
+                            y2={g.roadSegment.y2}
+                            stroke="#ec4899"
+                            strokeWidth={4 / zoom}
+                            strokeDasharray={`${8 / zoom},${4 / zoom}`}
+                            strokeLinecap="round"
+                            opacity={0.85}
+                          />
+                          {/* Titik magnet snap pada garis jalan */}
+                          <circle
+                            cx={g.projX}
+                            cy={g.projY}
+                            r={6 / zoom}
+                            fill="#ec4899"
+                            stroke="#ffffff"
+                            strokeWidth={2 / zoom}
+                          />
+                          {/* Badge keterangan Align to Road */}
+                          <g transform={`translate(${g.projX + 10 / zoom}, ${g.projY - 10 / zoom})`}>
+                            <rect
+                              x={0}
+                              y={-8 / zoom}
+                              width={96 / zoom}
+                              height={16 / zoom}
+                              rx={4 / zoom}
+                              fill="#ec4899"
+                            />
+                            <text
+                              x={48 / zoom}
+                              y={3.5 / zoom}
+                              fill="#ffffff"
+                              fontSize={9 / zoom}
+                              fontWeight="bold"
+                              textAnchor="middle"
+                              fontFamily="sans-serif"
+                            >
+                              📍 Align to {g.roadName || "Jalan"}
+                            </text>
+                          </g>
+                        </g>
+                      );
+                    }
+
+                    return null;
+                  })}
                 </g>
               )}
             </g>
