@@ -1,7 +1,15 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import type { SchematicData, SchematicNode, SchematicEdge, SchematicNodeType, SchematicEdgeType } from "../../types/schematic";
+import type {
+  SchematicData,
+  SchematicNode,
+  SchematicEdge,
+  SchematicNodeType,
+  SchematicEdgeType,
+  SchematicObstacle,
+  ObstacleType,
+} from "../../types/schematic";
 import {
   SPARK_ASSET_COLORS,
   renderPoleSvg,
@@ -63,6 +71,32 @@ function isLineInPolygon(p1: { x: number; y: number }, p2: { x: number; y: numbe
   if (pointInPolygon(p1, poly) || pointInPolygon(p2, poly)) return true;
   const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
   return pointInPolygon(mid, poly);
+}
+
+/**
+ * Helper manipulasi warna untuk shading gradasi 3D atap bangunan
+ */
+function adjustColorBrightness(hex: string, percent: number): string {
+  const cleanHex = hex.replace("#", "");
+  if (cleanHex.length !== 6) return hex;
+  const num = parseInt(cleanHex, 16);
+  let r = (num >> 16) + Math.round(255 * (percent / 100));
+  let g = ((num >> 8) & 0x00ff) + Math.round(255 * (percent / 100));
+  let b = (num & 0x0000ff) + Math.round(255 * (percent / 100));
+  r = Math.min(255, Math.max(0, r));
+  g = Math.min(255, Math.max(0, g));
+  b = Math.min(255, Math.max(0, b));
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+}
+
+function getRoofColors(baseColor: string) {
+  return {
+    top: adjustColorBrightness(baseColor, 12),      // Lereng atas (menerima cahaya terang)
+    bottom: adjustColorBrightness(baseColor, -22),  // Lereng bawah (bayangan / shading)
+    left: adjustColorBrightness(baseColor, -6),     // Tebing atap kiri
+    right: adjustColorBrightness(baseColor, -14),   // Tebing atap kanan
+    border: adjustColorBrightness(baseColor, -40),  // Lis / tepi atap
+  };
 }
 
 /**
@@ -137,6 +171,10 @@ export type ActiveTool =
   | "kabel-sutm"
   | "kabel-skutr"
   | "kabel-existing"
+  // Obstacle Tools (Konteks Lingkungan Murni Visual)
+  | "obstacle-building"
+  | "obstacle-road"
+  | "obstacle-alley"
   // Legacy aliases
   | "tiang-rencana"
   | "tiang-tr"
@@ -147,12 +185,38 @@ export type ActiveTool =
 
 export default function SchematicCanvas({ schematic, onChange, isPrinting = false }: Props) {
   const { nodes, edges } = schematic;
+  const obstacles = useMemo(() => schematic.obstacles || [], [schematic.obstacles]);
   const labelOffsets = useMemo(() => computeNodeLabelOffsets(nodes), [nodes]);
 
   const [activeTool, setActiveTool] = useState<ActiveTool>("select");
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<Set<string>>(new Set());
+  const [selectedObstacleId, setSelectedObstacleId] = useState<string | null>(null);
+  const [showObstacles, setShowObstacles] = useState(true);
   const [cableStartNodeId, setCableStartNodeId] = useState<string | null>(null);
+
+  // Obstacle Drawing & Interactive Transform States
+  const [roadDraftPoints, setRoadDraftPoints] = useState<{ x: number; y: number }[] | null>(null);
+  const [currentHoverCoords, setCurrentHoverCoords] = useState<{ x: number; y: number } | null>(null);
+  const [draggingObstacleId, setDraggingObstacleId] = useState<string | null>(null);
+  const [obstacleDragStartSnapshot, setObstacleDragStartSnapshot] = useState<SchematicObstacle | null>(null);
+  const [obstacleDragStartCoords, setObstacleDragStartCoords] = useState<{ x: number; y: number } | null>(null);
+  const [resizingObstacle, setResizingObstacle] = useState<{
+    id: string;
+    handle: string;
+    initW: number;
+    initH: number;
+    initX: number;
+    initY: number;
+    startMouseX: number;
+    startMouseY: number;
+  } | null>(null);
+  const [rotatingObstacle, setRotatingObstacle] = useState<{
+    id: string;
+    centerX: number;
+    centerY: number;
+    initAngle: number;
+  } | null>(null);
 
   // Selection Shape State
   type SelectionShape =
@@ -313,6 +377,8 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
   const handleClearSelection = useCallback(() => {
     setSelectedNodeIds(new Set());
     setSelectedEdgeIds(new Set());
+    setSelectedObstacleId(null);
+    setRoadDraftPoints(null);
     setSelectionShape(null);
     setCableStartNodeId(null);
   }, []);
@@ -334,6 +400,16 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
 
   // Bulk Delete Execution (1-step undo)
   const handleExecuteBulkDelete = useCallback(() => {
+    if (selectedObstacleId) {
+      pushState({
+        ...schematic,
+        obstacles: (schematic.obstacles || []).filter(o => o.id !== selectedObstacleId),
+      });
+      setSelectedObstacleId(null);
+      setIsConfirmDeleteOpen(false);
+      return;
+    }
+
     const newNodes = nodes.filter(n => !selectedNodeIds.has(n.id));
     const newEdges = edges.filter(
       e => !selectedEdgeIds.has(e.id) && !selectedNodeIds.has(e.fromNodeId) && !selectedNodeIds.has(e.toNodeId)
@@ -348,7 +424,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
     setSelectedNodeIds(new Set());
     setSelectedEdgeIds(new Set());
     setIsConfirmDeleteOpen(false);
-  }, [nodes, edges, selectedNodeIds, selectedEdgeIds, schematic, pushState]);
+  }, [nodes, edges, selectedNodeIds, selectedEdgeIds, selectedObstacleId, schematic, pushState]);
 
   // Bulk Edit Execution (1-step undo)
   const handleExecuteBulkEdit = useCallback(() => {
@@ -561,8 +637,13 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
         return;
       }
 
-      // Enter: Selesaikan poligon aktif
+      // Enter: Selesaikan poligon aktif atau gambar jalan
       if (e.key === "Enter") {
+        if (roadDraftPoints && roadDraftPoints.length >= 2) {
+          e.preventDefault();
+          handleFinishRoadDraft();
+          return;
+        }
         if (selectionShape && selectionShape.type === "polygon" && selectionShape.points.length >= 3) {
           e.preventDefault();
           completePolygonSelection(selectionShape.points);
@@ -570,8 +651,17 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
         }
       }
 
-      // Delete / Backspace: Konfirmasi hapus
+      // Delete / Backspace: Hapus obstacle atau konfirmasi hapus node/edge
       if (e.key === "Delete" || e.key === "Backspace") {
+        if (selectedObstacleId) {
+          e.preventDefault();
+          pushState({
+            ...schematic,
+            obstacles: (schematic.obstacles || []).filter(o => o.id !== selectedObstacleId),
+          });
+          setSelectedObstacleId(null);
+          return;
+        }
         if (selectedNodeIds.size > 0 || selectedEdgeIds.size > 0) {
           e.preventDefault();
           setIsConfirmDeleteOpen(true);
@@ -579,8 +669,14 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
         return;
       }
 
-      // Escape: batalkan mode seleksi / bersihkan pilihan
+      // Escape: batalkan mode seleksi / bersihkan pilihan / batalkan gambar jalan
       if (e.key === "Escape") {
+        if (roadDraftPoints) {
+          setRoadDraftPoints(null);
+        }
+        if (selectedObstacleId) {
+          setSelectedObstacleId(null);
+        }
         if (selectionShape) {
           setSelectionShape(null);
         } else if (selectedNodeIds.size > 0 || selectedEdgeIds.size > 0) {
@@ -593,14 +689,47 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleUndo, handleRedo, handleSelectAll, handleClearSelection, completePolygonSelection, handleCopy, handlePaste, handleDuplicate, selectionShape, selectedNodeIds, selectedEdgeIds]);
+  }, [handleUndo, handleRedo, handleSelectAll, handleClearSelection, completePolygonSelection, handleCopy, handlePaste, handleDuplicate, selectionShape, selectedNodeIds, selectedEdgeIds, selectedObstacleId, roadDraftPoints, schematic, pushState]);
 
   // Single Item Selection Compatibility untuk Property Inspector di bawah
-  const singleSelectedNodeId = selectedNodeIds.size === 1 && selectedEdgeIds.size === 0 ? Array.from(selectedNodeIds)[0] : null;
+  const singleSelectedNodeId = selectedNodeIds.size === 1 && selectedEdgeIds.size === 0 && !selectedObstacleId ? Array.from(selectedNodeIds)[0] : null;
   const selectedNode = singleSelectedNodeId ? nodes.find(n => n.id === singleSelectedNodeId) : null;
 
-  const singleSelectedEdgeId = selectedEdgeIds.size === 1 && selectedNodeIds.size === 0 ? Array.from(selectedEdgeIds)[0] : null;
+  const singleSelectedEdgeId = selectedEdgeIds.size === 1 && selectedNodeIds.size === 0 && !selectedObstacleId ? Array.from(selectedEdgeIds)[0] : null;
   const selectedEdge = singleSelectedEdgeId ? edges.find(e => e.id === singleSelectedEdgeId) : null;
+
+  const selectedObstacle = useMemo(() => (obstacles.find(o => o.id === selectedObstacleId) || null), [obstacles, selectedObstacleId]);
+
+  const updateSelectedObstacle = useCallback((attrs: Partial<SchematicObstacle>) => {
+    if (!selectedObstacleId) return;
+    const newObstacles = (schematic.obstacles || []).map(o => o.id === selectedObstacleId ? { ...o, ...attrs } : o);
+    pushState({
+      ...schematic,
+      obstacles: newObstacles,
+    });
+  }, [selectedObstacleId, schematic, pushState]);
+
+  const handleFinishRoadDraft = useCallback(() => {
+    if (!roadDraftPoints || roadDraftPoints.length < 2) return;
+    const isHighway = activeTool === "obstacle-road";
+    const newObs: SchematicObstacle = {
+      id: `obs_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      type: "obstacle",
+      obstacleType: isHighway ? "road" : "alley",
+      x: 0,
+      y: 0,
+      points: roadDraftPoints,
+      roadWidth: isHighway ? 24 : 10,
+      label: isHighway ? "Jalan Raya" : "Gang",
+    };
+    pushState({
+      ...schematic,
+      obstacles: [...(schematic.obstacles || []), newObs],
+    });
+    setRoadDraftPoints(null);
+    setSelectedObstacleId(newObs.id);
+    setActiveTool("select");
+  }, [roadDraftPoints, activeTool, schematic, pushState]);
 
   // Update atribut single node terpilih
   const updateSelectedNode = (attrs: Partial<SchematicNode>) => {
@@ -734,11 +863,485 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
     });
   };
 
-  // Mouse move on canvas (drag nodes, panning, atau rubberband selection)
+  // ─── OBSTACLE HANDLERS & RENDERERS ───
+  const handleObstacleClick = (obs: SchematicObstacle, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedObstacleId(obs.id);
+    setSelectedNodeIds(new Set());
+    setSelectedEdgeIds(new Set());
+    setCableStartNodeId(null);
+  };
+
+  const handleObstacleMouseDown = (obs: SchematicObstacle, e: React.MouseEvent) => {
+    if (activeTool !== "select") return;
+    e.stopPropagation();
+    setSelectedObstacleId(obs.id);
+    setSelectedNodeIds(new Set());
+    setSelectedEdgeIds(new Set());
+    setCableStartNodeId(null);
+
+    const coords = getCanvasCoords(e);
+    setDraggingObstacleId(obs.id);
+    setObstacleDragStartSnapshot({ ...obs });
+    setObstacleDragStartCoords(coords);
+  };
+
+  const handleObstacleRotateMouseDown = (obs: SchematicObstacle, e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const coords = getCanvasCoords(e);
+    const curAngle = Math.atan2(coords.y - obs.y, coords.x - obs.x) * (180 / Math.PI);
+    setRotatingObstacle({
+      id: obs.id,
+      centerX: obs.x,
+      centerY: obs.y,
+      initAngle: curAngle - (obs.rotationDeg || 0),
+    });
+  };
+
+  const handleObstacleResizeMouseDown = (obs: SchematicObstacle, handle: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const coords = getCanvasCoords(e);
+    setResizingObstacle({
+      id: obs.id,
+      handle,
+      initW: obs.width || 80,
+      initH: obs.height || 50,
+      initX: obs.x,
+      initY: obs.y,
+      startMouseX: coords.x,
+      startMouseY: coords.y,
+    });
+  };
+
+  const renderBuildingSvg = (obs: SchematicObstacle) => {
+    const isSelected = selectedObstacleId === obs.id;
+    const w = obs.width || 80;
+    const h = obs.height || 50;
+    const rot = obs.rotationDeg || 0;
+    const baseColor = obs.color || "#ea580c";
+    const colors = getRoofColors(baseColor);
+    const ridgeInset = Math.min(18, w * 0.22);
+
+    return (
+      <g
+        key={obs.id}
+        transform={`translate(${obs.x}, ${obs.y}) rotate(${rot})`}
+        onMouseDown={(e) => handleObstacleMouseDown(obs, e)}
+        onClick={(e) => handleObstacleClick(obs, e)}
+        className="cursor-move group select-none"
+      >
+        {/* Selection Glow / Bounding Box */}
+        {isSelected && (
+          <rect
+            x={-w / 2 - 6}
+            y={-h / 2 - 6}
+            width={w + 12}
+            height={h + 12}
+            fill="none"
+            stroke="#0284c7"
+            strokeWidth={1.8}
+            strokeDasharray="4 3"
+            rx={4}
+          />
+        )}
+
+        {/* Building Base Drop Shadow */}
+        <rect
+          x={-w / 2}
+          y={-h / 2}
+          width={w}
+          height={h}
+          rx={3}
+          fill="rgba(0,0,0,0.14)"
+          transform="translate(0, 3)"
+        />
+
+        {/* 4 Facets of Hipped / Pelana Roof (Efek 3D Shading Ringan) */}
+        {/* 1. Top slope (menerima cahaya terang) */}
+        <polygon
+          points={`${-w / 2},${-h / 2} ${w / 2},${-h / 2} ${w / 2 - ridgeInset},0 ${-w / 2 + ridgeInset},0`}
+          fill={colors.top}
+        />
+        {/* 2. Bottom slope (bayangan / shading halus) */}
+        <polygon
+          points={`${-w / 2 + ridgeInset},0 ${w / 2 - ridgeInset},0 ${w / 2},${h / 2} ${-w / 2},${h / 2}`}
+          fill={colors.bottom}
+        />
+        {/* 3. Left slope (medium) */}
+        <polygon
+          points={`${-w / 2},${-h / 2} ${-w / 2 + ridgeInset},0 ${-w / 2},${h / 2}`}
+          fill={colors.left}
+        />
+        {/* 4. Right slope (medium dark) */}
+        <polygon
+          points={`${w / 2},${-h / 2} ${w / 2},${h / 2} ${w / 2 - ridgeInset},0`}
+          fill={colors.right}
+        />
+
+        {/* Ridge Line (Garis Bubungan Tengah) */}
+        <line
+          x1={-w / 2 + ridgeInset}
+          y1={0}
+          x2={w / 2 - ridgeInset}
+          y2={0}
+          stroke="#ffffff"
+          strokeWidth={2.5}
+          strokeLinecap="round"
+          opacity={0.7}
+        />
+        {/* Valley / Hip Lines ke Sudut-Sudut Atap */}
+        <line x1={-w / 2 + ridgeInset} y1={0} x2={-w / 2} y2={-h / 2} stroke={colors.border} strokeWidth={1} opacity={0.35} />
+        <line x1={-w / 2 + ridgeInset} y1={0} x2={-w / 2} y2={h / 2} stroke={colors.border} strokeWidth={1} opacity={0.35} />
+        <line x1={w / 2 - ridgeInset} y1={0} x2={w / 2} y2={-h / 2} stroke={colors.border} strokeWidth={1} opacity={0.35} />
+        <line x1={w / 2 - ridgeInset} y1={0} x2={w / 2} y2={h / 2} stroke={colors.border} strokeWidth={1} opacity={0.35} />
+
+        {/* Roof Outer Eaves Border (Garis Tepi Atap) */}
+        <rect
+          x={-w / 2}
+          y={-h / 2}
+          width={w}
+          height={h}
+          rx={3}
+          fill="none"
+          stroke={colors.border}
+          strokeWidth={1.5}
+        />
+
+        {/* Label Text */}
+        {obs.label && (
+          <g transform="translate(0, 0)">
+            <rect
+              x={-(obs.label.length * 3.4 + 7)}
+              y={-8}
+              width={obs.label.length * 6.8 + 14}
+              height={16}
+              rx={3.5}
+              fill="rgba(255, 255, 255, 0.92)"
+              stroke="rgba(0,0,0,0.18)"
+              strokeWidth={0.8}
+            />
+            <text
+              x={0}
+              y={3.5}
+              textAnchor="middle"
+              fontSize={9}
+              fontWeight={800}
+              fill="#0f172a"
+              fontFamily="system-ui, -apple-system, sans-serif"
+              className="select-none"
+            >
+              {obs.label}
+            </text>
+          </g>
+        )}
+
+        {/* Interactive Handles saat Ter-select */}
+        {isSelected && (
+          <>
+            {/* Rotate Handle */}
+            <g
+              transform={`translate(0, ${-h / 2 - 20})`}
+              onMouseDown={(e) => handleObstacleRotateMouseDown(obs, e)}
+              className="cursor-grab active:cursor-grabbing"
+            >
+              <line x1={0} y1={0} x2={0} y2={16} stroke="#0284c7" strokeWidth={1.5} strokeDasharray="2 2" />
+              <circle r={6.5} fill="#0284c7" stroke="#ffffff" strokeWidth={2} />
+              <path
+                d="M -3 -1 A 3 3 0 1 1 1 3"
+                fill="none"
+                stroke="#ffffff"
+                strokeWidth={1.2}
+                strokeLinecap="round"
+              />
+            </g>
+
+            {/* Corner Resize Handles */}
+            {/* NW */}
+            <rect
+              x={-w / 2 - 4}
+              y={-h / 2 - 4}
+              width={8}
+              height={8}
+              fill="#ffffff"
+              stroke="#0284c7"
+              strokeWidth={1.5}
+              className="cursor-nwse-resize"
+              onMouseDown={(e) => handleObstacleResizeMouseDown(obs, "nw", e)}
+            />
+            {/* NE */}
+            <rect
+              x={w / 2 - 4}
+              y={-h / 2 - 4}
+              width={8}
+              height={8}
+              fill="#ffffff"
+              stroke="#0284c7"
+              strokeWidth={1.5}
+              className="cursor-nesw-resize"
+              onMouseDown={(e) => handleObstacleResizeMouseDown(obs, "ne", e)}
+            />
+            {/* SE */}
+            <rect
+              x={w / 2 - 4}
+              y={h / 2 - 4}
+              width={8}
+              height={8}
+              fill="#ffffff"
+              stroke="#0284c7"
+              strokeWidth={1.5}
+              className="cursor-nwse-resize"
+              onMouseDown={(e) => handleObstacleResizeMouseDown(obs, "se", e)}
+            />
+            {/* SW */}
+            <rect
+              x={-w / 2 - 4}
+              y={h / 2 - 4}
+              width={8}
+              height={8}
+              fill="#ffffff"
+              stroke="#0284c7"
+              strokeWidth={1.5}
+              className="cursor-nesw-resize"
+              onMouseDown={(e) => handleObstacleResizeMouseDown(obs, "sw", e)}
+            />
+          </>
+        )}
+      </g>
+    );
+  };
+
+  const renderRoadSvg = (obs: SchematicObstacle) => {
+    const isSelected = selectedObstacleId === obs.id;
+    const pts = obs.points || [];
+    if (pts.length < 2) return null;
+    const pathD = pts.reduce((acc, p, idx) => `${acc} ${idx === 0 ? "M" : "L"} ${p.x} ${p.y}`, "");
+    const isHighway = obs.obstacleType === "road";
+    const roadW = obs.roadWidth || (isHighway ? 24 : 10);
+
+    // Titik tengah jalur jalan untuk label
+    const midIdx = Math.floor((pts.length - 1) / 2);
+    const pA = pts[midIdx];
+    const pB = pts[midIdx + 1] || pA;
+    const midX = (pA.x + pB.x) / 2;
+    const midY = (pA.y + pB.y) / 2;
+
+    return (
+      <g
+        key={obs.id}
+        onMouseDown={(e) => handleObstacleMouseDown(obs, e)}
+        onClick={(e) => handleObstacleClick(obs, e)}
+        className="cursor-pointer select-none"
+      >
+        {/* Selection Glow */}
+        {isSelected && (
+          <path
+            d={pathD}
+            fill="none"
+            stroke="#0284c7"
+            strokeWidth={roadW + 8}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity={0.4}
+          />
+        )}
+
+        {/* Outer Border / Curb */}
+        <path
+          d={pathD}
+          fill="none"
+          stroke={isHighway ? "#1e293b" : "#94a3b8"}
+          strokeWidth={roadW + (isHighway ? 4 : 2)}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+
+        {/* Asphalt Surface */}
+        <path
+          d={pathD}
+          fill="none"
+          stroke={isHighway ? "#334155" : "#cbd5e1"}
+          strokeWidth={roadW}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+
+        {/* Highway Center Marka Jalan Dashed Putih */}
+        {isHighway && (
+          <path
+            d={pathD}
+            fill="none"
+            stroke="#ffffff"
+            strokeWidth={2.2}
+            strokeDasharray="9 7"
+            strokeLinecap="butt"
+            strokeLinejoin="round"
+            opacity={0.9}
+          />
+        )}
+
+        {/* Label Badge */}
+        {obs.label && (
+          <g transform={`translate(${midX}, ${midY})`}>
+            <rect
+              x={-(obs.label.length * 3.2 + 8)}
+              y={-8}
+              width={obs.label.length * 6.4 + 16}
+              height={16}
+              rx={4}
+              fill="rgba(255, 255, 255, 0.95)"
+              stroke="rgba(0,0,0,0.22)"
+              strokeWidth={0.8}
+            />
+            <text
+              x={0}
+              y={3.5}
+              textAnchor="middle"
+              fontSize={8.5}
+              fontWeight={800}
+              fill="#1e293b"
+              fontFamily="system-ui, -apple-system, sans-serif"
+              className="select-none"
+            >
+              {obs.label}
+            </text>
+          </g>
+        )}
+
+        {/* Vertex Handles saat Ter-select */}
+        {isSelected && pts.map((pt, idx) => (
+          <circle
+            key={idx}
+            cx={pt.x}
+            cy={pt.y}
+            r={5}
+            fill="#ffffff"
+            stroke="#0284c7"
+            strokeWidth={2}
+            className="cursor-move"
+          />
+        ))}
+      </g>
+    );
+  };
+
+  const renderRoadDraftPreview = () => {
+    if (!roadDraftPoints || roadDraftPoints.length === 0) return null;
+    const isHighway = activeTool === "obstacle-road";
+    const roadW = isHighway ? 24 : 10;
+    const allPts = currentHoverCoords ? [...roadDraftPoints, currentHoverCoords] : roadDraftPoints;
+    const pathD = allPts.reduce((acc, p, idx) => `${acc} ${idx === 0 ? "M" : "L"} ${p.x} ${p.y}`, "");
+
+    return (
+      <g className="road-draft-preview pointer-events-none select-none">
+        <path
+          d={pathD}
+          fill="none"
+          stroke={isHighway ? "#334155" : "#cbd5e1"}
+          strokeWidth={roadW}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity={0.7}
+        />
+        {isHighway && (
+          <path
+            d={pathD}
+            fill="none"
+            stroke="#ffffff"
+            strokeWidth={2}
+            strokeDasharray="8 6"
+            opacity={0.8}
+          />
+        )}
+        {roadDraftPoints.map((p, idx) => (
+          <circle key={idx} cx={p.x} cy={p.y} r={4} fill="#0284c7" stroke="#ffffff" strokeWidth={1.5} />
+        ))}
+        {currentHoverCoords && (
+          <circle cx={currentHoverCoords.x} cy={currentHoverCoords.y} r={5} fill="#ef4444" stroke="#ffffff" strokeWidth={2} />
+        )}
+      </g>
+    );
+  };
+
+  // Mouse move on canvas (drag nodes/obstacles, panning, atau rubberband selection)
   const handleMouseMove = (e: React.MouseEvent) => {
+    const coords = getCanvasCoords(e);
+    setCurrentHoverCoords(coords);
+
+    // Obstacle resizing
+    if (resizingObstacle) {
+      const rawDx = coords.x - resizingObstacle.startMouseX;
+      const rawDy = coords.y - resizingObstacle.startMouseY;
+      const obs = obstacles.find(o => o.id === resizingObstacle.id);
+      if (obs) {
+        const rad = ((obs.rotationDeg || 0) * Math.PI) / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        const localDx = rawDx * cos + rawDy * sin;
+        const localDy = -rawDx * sin + rawDy * cos;
+
+        let newW = resizingObstacle.initW;
+        let newH = resizingObstacle.initH;
+
+        if (resizingObstacle.handle.includes("e")) newW = Math.max(30, Math.round(resizingObstacle.initW + localDx * 2));
+        if (resizingObstacle.handle.includes("w")) newW = Math.max(30, Math.round(resizingObstacle.initW - localDx * 2));
+        if (resizingObstacle.handle.includes("s")) newH = Math.max(20, Math.round(resizingObstacle.initH + localDy * 2));
+        if (resizingObstacle.handle.includes("n")) newH = Math.max(20, Math.round(resizingObstacle.initH - localDy * 2));
+
+        onChange({
+          ...schematic,
+          obstacles: (schematic.obstacles || []).map(o => o.id === obs.id ? { ...o, width: newW, height: newH } : o),
+        });
+      }
+      return;
+    }
+
+    // Obstacle rotating
+    if (rotatingObstacle) {
+      const curAngle = Math.atan2(coords.y - rotatingObstacle.centerY, coords.x - rotatingObstacle.centerX) * (180 / Math.PI);
+      let deg = Math.round(curAngle - rotatingObstacle.initAngle);
+      deg = ((deg % 360) + 360) % 360;
+      const step = e.shiftKey ? 1 : 5;
+      const snapped = Math.round(deg / step) * step;
+      onChange({
+        ...schematic,
+        obstacles: (schematic.obstacles || []).map(o => o.id === rotatingObstacle.id ? { ...o, rotationDeg: snapped } : o),
+      });
+      return;
+    }
+
+    // Obstacle dragging
+    if (draggingObstacleId && obstacleDragStartSnapshot && obstacleDragStartCoords) {
+      const rawDx = coords.x - obstacleDragStartCoords.x;
+      const rawDy = coords.y - obstacleDragStartCoords.y;
+      const dx = snap(rawDx);
+      const dy = snap(rawDy);
+
+      onChange({
+        ...schematic,
+        obstacles: (schematic.obstacles || []).map(o => {
+          if (o.id !== draggingObstacleId) return o;
+          if (o.obstacleType === "building") {
+            return {
+              ...o,
+              x: Math.round(obstacleDragStartSnapshot.x + dx),
+              y: Math.round(obstacleDragStartSnapshot.y + dy),
+            };
+          } else {
+            const origPts = obstacleDragStartSnapshot.points || [];
+            return {
+              ...o,
+              points: origPts.map(p => ({ x: Math.round(p.x + dx), y: Math.round(p.y + dy) })),
+            };
+          }
+        }),
+      });
+      return;
+    }
+
     // Gardu on-canvas rotation dragging
     if (rotatingGarduNodeId && garduRotateCenter) {
-      const coords = getCanvasCoords(e);
       const dx = coords.x - garduRotateCenter.x;
       const dy = coords.y - garduRotateCenter.y;
       const rawAngle = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
@@ -753,7 +1356,6 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
 
     // Gardu on-canvas offset dragging
     if (offsettingGarduNodeId && offsetDragStart) {
-      const coords = getCanvasCoords(e);
       const dx = snap(coords.x - offsetDragStart.x);
       const dy = snap(coords.y - offsetDragStart.y);
       onChange({
@@ -769,7 +1371,6 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
 
     // Multi-node dragging
     if (draggingNodeId && dragStartSnapshot && dragStartCoords) {
-      const coords = getCanvasCoords(e);
       const rawDx = coords.x - dragStartCoords.x;
       const rawDy = coords.y - dragStartCoords.y;
       const dx = snap(rawDx);
@@ -795,7 +1396,6 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
 
     // Active Selection drawing preview
     if (selectionShape) {
-      const coords = getCanvasCoords(e);
       if (selectionShape.type === "rect") {
         setSelectionShape({ ...selectionShape, currentX: coords.x, currentY: coords.y });
       } else if (selectionShape.type === "circle") {
@@ -813,6 +1413,21 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
 
   // Drag end: commit history jika node berpindah atau seleksi selesai
   const handleMouseUp = () => {
+    if (resizingObstacle) {
+      pushState(schematic);
+      setResizingObstacle(null);
+    }
+    if (rotatingObstacle) {
+      pushState(schematic);
+      setRotatingObstacle(null);
+    }
+    if (draggingObstacleId) {
+      pushState(schematic);
+      setDraggingObstacleId(null);
+      setObstacleDragStartSnapshot(null);
+      setObstacleDragStartCoords(null);
+    }
+
     if (rotatingGarduNodeId) {
       pushState(schematic);
       setRotatingGarduNodeId(null);
@@ -949,6 +1564,8 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
     }
 
     const coords = getCanvasCoords(e);
+    const snappedX = snap(coords.x);
+    const snappedY = snap(coords.y);
 
     // Mode Polygon: klik tiap sudut, klik dekat titik awal untuk menutup
     if (activeTool === "select-polygon") {
@@ -978,7 +1595,48 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
     if (activeTool === "select" || activeTool === "select-rect" || activeTool === "select-circle" || activeTool === "select-lasso") {
       setSelectedNodeIds(new Set());
       setSelectedEdgeIds(new Set());
+      setSelectedObstacleId(null);
       setCableStartNodeId(null);
+      return;
+    }
+
+    // ─── OBSTACLE CREATION (MURNI VISUAL / KONTEKS LINGKUNGAN) ───
+    // 1. Simbol Bangunan / Atap
+    if (activeTool === "obstacle-building") {
+      const idx = obstacles.filter(o => o.obstacleType === "building").length + 1;
+      const newObs: SchematicObstacle = {
+        id: `obs_bld_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        type: "obstacle",
+        obstacleType: "building",
+        x: snappedX,
+        y: snappedY,
+        width: 80,
+        height: 50,
+        rotationDeg: 0,
+        label: `Bangunan ${idx}`,
+        color: "#ea580c",
+      };
+      pushState({
+        ...schematic,
+        obstacles: [...(schematic.obstacles || []), newObs],
+      });
+      setSelectedObstacleId(newObs.id);
+      setSelectedNodeIds(new Set());
+      setSelectedEdgeIds(new Set());
+      setActiveTool("select");
+      return;
+    }
+
+    // 2. Simbol Jalan Raya & Gang (Multi-titik)
+    if (activeTool === "obstacle-road" || activeTool === "obstacle-alley") {
+      if (!roadDraftPoints || roadDraftPoints.length === 0) {
+        setRoadDraftPoints([{ x: snappedX, y: snappedY }]);
+      } else {
+        const last = roadDraftPoints[roadDraftPoints.length - 1];
+        if (Math.hypot(snappedX - last.x, snappedY - last.y) > 8) {
+          setRoadDraftPoints([...roadDraftPoints, { x: snappedX, y: snappedY }]);
+        }
+      }
       return;
     }
 
@@ -997,9 +1655,6 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
     }
 
     // Tambah node baru
-    const snappedX = snap(coords.x);
-    const snappedY = snap(coords.y);
-
     const newNodeId = `node_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     let newNode: SchematicNode;
 
@@ -1415,6 +2070,71 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
               <div className="w-4 h-0.5 bg-slate-300 rounded-full" />
               <span>Exist</span>
             </button>
+
+            <div className="h-5 w-px bg-slate-700 mx-1" />
+
+            {/* ── Group Tool Obstacle (Konteks Lingkungan: Bangunan & Jalan) ── */}
+            <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider px-1 hidden md:inline">
+              Obstacle:
+            </span>
+
+            {/* 1. Bangunan */}
+            <button
+              onClick={() => { setActiveTool("obstacle-building"); setCableStartNodeId(null); setRoadDraftPoints(null); }}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                activeTool === "obstacle-building"
+                  ? "bg-amber-600 text-white shadow-sm ring-2 ring-amber-400/50"
+                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+              }`}
+              title="Bangunan / Atap Rumah & Ruko (Tampak Atas 3D Shading)"
+            >
+              <span>🏠</span>
+              <span>Bangunan</span>
+            </button>
+
+            {/* 2. Jalan Raya */}
+            <button
+              onClick={() => { setActiveTool("obstacle-road"); setCableStartNodeId(null); setRoadDraftPoints(null); }}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                activeTool === "obstacle-road"
+                  ? "bg-slate-600 text-white shadow-sm ring-2 ring-slate-400/50"
+                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+              }`}
+              title="Jalan Raya (Jalur Aspal Lebar dengan Marka Putih)"
+            >
+              <div className="w-4 h-2.5 bg-slate-700 border border-slate-600 rounded-xs flex items-center justify-center">
+                <div className="w-2.5 border-b border-dashed border-white" />
+              </div>
+              <span>Jalan Raya</span>
+            </button>
+
+            {/* 3. Gang */}
+            <button
+              onClick={() => { setActiveTool("obstacle-alley"); setCableStartNodeId(null); setRoadDraftPoints(null); }}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                activeTool === "obstacle-alley"
+                  ? "bg-slate-600 text-white shadow-sm ring-2 ring-slate-400/50"
+                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+              }`}
+              title="Gang / Jalan Kecil (Jalur Sempit Abu-abu)"
+            >
+              <div className="w-4 h-1 bg-slate-400 rounded-full" />
+              <span>Gang</span>
+            </button>
+
+            {/* 4. Toggle Tampilkan / Sembunyikan Obstacle */}
+            <button
+              onClick={() => setShowObstacles(prev => !prev)}
+              className={`px-2 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 border transition cursor-pointer ${
+                showObstacles
+                  ? "bg-slate-800 text-emerald-400 border-slate-700 hover:bg-slate-700"
+                  : "bg-slate-800 text-slate-500 border-slate-700 hover:bg-slate-700 line-through"
+              }`}
+              title={showObstacles ? "Klik untuk Sembunyikan Obstacle" : "Klik untuk Tampilkan Obstacle"}
+            >
+              <span>{showObstacles ? "👁️" : "🙈"}</span>
+              <span className="hidden xl:inline">Obstacle {showObstacles ? "ON" : "OFF"}</span>
+            </button>
           </div>
 
           {/* Undo, Redo, Zoom & Action Controls */}
@@ -1522,6 +2242,18 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                 <span className="text-cyan-300 font-semibold">
                   ◯ Mode Lingkaran: Klik titik pusat dan seret keluar untuk menentukan radius seleksi.
                 </span>
+              ) : activeTool === "obstacle-building" ? (
+                <span className="text-amber-300 font-semibold">
+                  🏠 Mode Bangunan: Klik pada kanvas untuk menaruh simbol bangunan/atap. Drag sudut untuk resize, handle atas untuk rotasi.
+                </span>
+              ) : activeTool === "obstacle-road" ? (
+                <span className="text-amber-300 font-semibold">
+                  🛣️ Mode Jalan Raya: Klik beberapa titik untuk membuat jalur jalan. Dobel klik atau tekan [Enter] untuk selesai.
+                </span>
+              ) : activeTool === "obstacle-alley" ? (
+                <span className="text-amber-300 font-semibold">
+                  🛣️ Mode Gang: Klik beberapa titik untuk membuat gang/jalan sempit. Dobel klik atau tekan [Enter] untuk selesai.
+                </span>
               ) : activeTool === "select" ? (
                 <span>
                   Mode Pilih: Klik simbol/kabel untuk pilih. [Shift]: multi-pilih. [Ctrl+C]/[Ctrl+V]: Salin, [Ctrl+D]: Duplikat, [Del]: Hapus, [Ctrl+A]: Semua.
@@ -1529,6 +2261,29 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
               ) : (
                 <span>Mode Tambah: Klik di area gambar untuk meletakkan simbol.</span>
               )}
+            </div>
+          )}
+
+          {/* Floating Road Drafting Toolbar */}
+          {roadDraftPoints && roadDraftPoints.length > 0 && (
+            <div className="absolute top-12 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 text-white border border-amber-500/60 px-4 py-2 rounded-xl text-xs font-bold shadow-2xl flex items-center gap-3 backdrop-blur-sm animate-in fade-in slide-in-from-top-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
+              <span>
+                Menggambar {activeTool === "obstacle-road" ? "Jalan Raya" : "Gang"} ({roadDraftPoints.length} titik)
+              </span>
+              <button
+                onClick={handleFinishRoadDraft}
+                disabled={roadDraftPoints.length < 2}
+                className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-sm"
+              >
+                Selesai (Enter)
+              </button>
+              <button
+                onClick={() => { setRoadDraftPoints(null); setActiveTool("select"); }}
+                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold transition cursor-pointer border border-slate-700"
+              >
+                Batal (Esc)
+              </button>
             </div>
           )}
 
@@ -1654,6 +2409,24 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
                   fill="url(#grid-pattern)"
                   pointerEvents="none"
                 />
+              )}
+
+              {/* ─── Layer 0: Obstacles (Layer Paling Bawah / Background) ─── */}
+              {showObstacles && (
+                <g id="layer-obstacles" className="obstacles-layer">
+                  {/* 1. Roads & Alleys (Garis Jalan di Bawah Bangunan) */}
+                  {obstacles
+                    .filter(o => o.obstacleType === "road" || o.obstacleType === "alley")
+                    .map(renderRoadSvg)}
+
+                  {/* 2. Buildings (Atap Bangunan Tampak Atas 3D Shading) */}
+                  {obstacles
+                    .filter(o => o.obstacleType === "building")
+                    .map(renderBuildingSvg)}
+
+                  {/* In-progress Road Draft Preview */}
+                  {roadDraftPoints && roadDraftPoints.length > 0 && renderRoadDraftPreview()}
+                </g>
               )}
 
               {/* ─── Render Edges (Garis Kabel) ─── */}
@@ -2057,7 +2830,7 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
         </div>
 
         {/* ─── Bottom Property Inspector Panel (Single Item Selected) ─── */}
-        {!isPrinting && (selectedNode || selectedEdge) && totalSelectedCount === 1 && (
+        {!isPrinting && (((selectedNode || selectedEdge) && totalSelectedCount === 1) || selectedObstacle) && (
           <div className="bg-white border-t-2 border-slate-300 p-2.5 px-4 flex items-center justify-between gap-4 z-10 shadow-lg animate-in slide-in-from-bottom-2">
             {/* INSPECTOR UNTUK SIMBOL (NODE) */}
             {selectedNode && (
@@ -2335,9 +3108,147 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
               </div>
             )}
 
+            {/* INSPECTOR UNTUK OBSTACLE (BANGUNAN & JALAN) */}
+            {selectedObstacle && (
+              <div className="flex items-center gap-3 flex-wrap flex-1 text-xs">
+                <span className="font-black text-amber-900 uppercase tracking-tight flex items-center gap-1.5">
+                  <span>{selectedObstacle.obstacleType === "building" ? "🏠" : "🛣️"}</span>
+                  Atribut {selectedObstacle.obstacleType === "building" ? "Bangunan" : (selectedObstacle.obstacleType === "road" ? "Jalan Raya" : "Gang")}:
+                </span>
+
+                {/* Nama / Label */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-500 font-bold">Nama/Label:</span>
+                  <input
+                    type="text"
+                    value={selectedObstacle.label || ""}
+                    onChange={(e) => updateSelectedObstacle({ label: e.target.value })}
+                    placeholder="e.g. Rumah Warga, Ruko, Gudang"
+                    className="px-2 py-1 border border-slate-300 rounded font-semibold text-xs w-40 outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                {/* Bangunan (Warna Atap, Ukuran P x L, Rotasi) */}
+                {selectedObstacle.obstacleType === "building" && (
+                  <>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-500 font-bold">Warna Atap:</span>
+                      <div className="flex items-center gap-1">
+                        {[
+                          { label: "Oranye / Terakota", color: "#ea580c" },
+                          { label: "Coklat Bata", color: "#b45309" },
+                          { label: "Abu-abu Slate", color: "#475569" },
+                          { label: "Biru Genteng", color: "#0284c7" },
+                          { label: "Hijau Atap", color: "#15803d" },
+                        ].map(p => (
+                          <button
+                            key={p.color}
+                            type="button"
+                            onClick={() => updateSelectedObstacle({ color: p.color })}
+                            className={`w-4 h-4 rounded-full border-2 transition cursor-pointer ${
+                              (selectedObstacle.color || "#ea580c") === p.color ? "border-slate-900 scale-125 shadow-xs ring-1 ring-amber-400" : "border-white hover:scale-110"
+                            }`}
+                            style={{ backgroundColor: p.color }}
+                            title={p.label}
+                          />
+                        ))}
+                        <input
+                          type="color"
+                          value={selectedObstacle.color || "#ea580c"}
+                          onChange={(e) => updateSelectedObstacle({ color: e.target.value })}
+                          className="w-5 h-5 p-0 border-0 rounded cursor-pointer ml-1"
+                          title="Warna Kustom"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-500 font-bold">Ukuran:</span>
+                      <span className="text-[10px] text-slate-400 font-bold">P</span>
+                      <input
+                        type="number"
+                        min={20}
+                        max={600}
+                        step={5}
+                        value={selectedObstacle.width || 80}
+                        onChange={(e) => updateSelectedObstacle({ width: Math.max(20, parseInt(e.target.value) || 80) })}
+                        className="w-12 px-1.5 py-0.5 border border-slate-300 rounded font-mono font-bold text-xs"
+                      />
+                      <span className="text-[10px] text-slate-400 font-bold">L</span>
+                      <input
+                        type="number"
+                        min={20}
+                        max={600}
+                        step={5}
+                        value={selectedObstacle.height || 50}
+                        onChange={(e) => updateSelectedObstacle({ height: Math.max(20, parseInt(e.target.value) || 50) })}
+                        className="w-12 px-1.5 py-0.5 border border-slate-300 rounded font-mono font-bold text-xs"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-500 font-bold">Rotasi:</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={360}
+                        step={15}
+                        value={Math.round(selectedObstacle.rotationDeg || 0)}
+                        onChange={(e) => updateSelectedObstacle({ rotationDeg: parseInt(e.target.value) || 0 })}
+                        className="w-14 px-1.5 py-0.5 border border-slate-300 rounded font-mono font-bold text-xs"
+                      />
+                      <span className="text-slate-500 font-bold">°</span>
+                      <button
+                        type="button"
+                        onClick={() => updateSelectedObstacle({ rotationDeg: 0 })}
+                        className="px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 hover:bg-slate-200 rounded"
+                        title="Set 0°"
+                      >
+                        0°
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateSelectedObstacle({ rotationDeg: 90 })}
+                        className="px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 hover:bg-slate-200 rounded"
+                        title="Set 90°"
+                      >
+                        90°
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {/* Jalan Raya & Gang (Lebar Jalur) */}
+                {(selectedObstacle.obstacleType === "road" || selectedObstacle.obstacleType === "alley") && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-500 font-bold">Lebar Jalur:</span>
+                    <input
+                      type="number"
+                      min={5}
+                      max={60}
+                      value={selectedObstacle.roadWidth || (selectedObstacle.obstacleType === "road" ? 24 : 10)}
+                      onChange={(e) => updateSelectedObstacle({ roadWidth: Math.max(5, parseInt(e.target.value) || 10) })}
+                      className="w-14 px-1.5 py-0.5 border border-slate-300 rounded font-mono font-bold text-xs"
+                    />
+                    <span className="text-slate-400">px</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex items-center gap-2 flex-shrink-0">
               <button
-                onClick={() => setIsConfirmDeleteOpen(true)}
+                onClick={() => {
+                  if (selectedObstacleId) {
+                    pushState({
+                      ...schematic,
+                      obstacles: (schematic.obstacles || []).filter(o => o.id !== selectedObstacleId),
+                    });
+                    setSelectedObstacleId(null);
+                  } else {
+                    setIsConfirmDeleteOpen(true);
+                  }
+                }}
                 className="px-3 py-1.5 rounded-lg text-xs font-bold text-red-600 hover:bg-red-50 border border-red-200 transition cursor-pointer"
               >
                 Hapus

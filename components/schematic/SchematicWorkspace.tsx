@@ -233,6 +233,58 @@ const PRESET_ELEVATE_197KVA: SchematicData = {
       kondukturUkuran: 70,
     },
   ],
+  obstacles: [
+    {
+      id: "obs_road_1",
+      type: "obstacle",
+      obstacleType: "road",
+      x: 0,
+      y: 0,
+      points: [
+        { x: 60, y: 290 },
+        { x: 770, y: 290 },
+      ],
+      roadWidth: 26,
+      label: "Jl. Timor Raya",
+    },
+    {
+      id: "obs_alley_1",
+      type: "obstacle",
+      obstacleType: "alley",
+      x: 0,
+      y: 0,
+      points: [
+        { x: 340, y: 140 },
+        { x: 340, y: 290 },
+      ],
+      roadWidth: 11,
+      label: "Gang Mawar",
+    },
+    {
+      id: "obs_bld_1",
+      type: "obstacle",
+      obstacleType: "building",
+      x: 460,
+      y: 130,
+      width: 90,
+      height: 55,
+      rotationDeg: 0,
+      label: "Gedung Pabrik",
+      color: "#ea580c",
+    },
+    {
+      id: "obs_bld_2",
+      type: "obstacle",
+      obstacleType: "building",
+      x: 620,
+      y: 135,
+      width: 80,
+      height: 50,
+      rotationDeg: 0,
+      label: "Kantor",
+      color: "#475569",
+    },
+  ],
 };
 
 const STORAGE_KEY = "spark_schematic_v1";

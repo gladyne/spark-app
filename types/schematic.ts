@@ -80,9 +80,30 @@ export interface SchematicKop {
   ukuranKertas: string;
 }
 
+export type ObstacleType = "building" | "road" | "alley";
+
+export interface SchematicObstacle {
+  id: string;
+  type: "obstacle";
+  obstacleType: ObstacleType;
+  // Posisi acuan (untuk bangunan: titik tengah / pusat rotasi; untuk jalan: offset atau titik awal)
+  x: number;
+  y: number;
+  // Khusus Bangunan (Building / Roof):
+  width?: number;        // default: 80px
+  height?: number;       // default: 50px
+  rotationDeg?: number;  // 0 - 360 derajat
+  label?: string;        // e.g. "Ruko", "Gudang", "Rumah Warga"
+  color?: string;        // preset / custom warna atap
+  // Khusus Jalan (Road / Alley):
+  points?: { x: number; y: number }[]; // multi-titik jalur jalan
+  roadWidth?: number;    // ketebalan jalan (px)
+}
+
 export interface SchematicData {
   nodes: SchematicNode[];
   edges: SchematicEdge[];
+  obstacles?: SchematicObstacle[];
   kop: SchematicKop;
 }
 
