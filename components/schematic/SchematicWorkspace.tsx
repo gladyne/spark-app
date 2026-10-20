@@ -10,6 +10,9 @@ import KopGambar from "./KopGambar";
 import TabelLegenda from "./TabelLegenda";
 import RabSummaryPanel, { formatRupiah } from "../sidebar/RabSummaryPanel";
 import RabExportModal from "../modals/RabExportModal";
+import SurveyDataModal from "./export/SurveyDataModal";
+import SurveyExportModal from "./export/SurveyExportModal";
+import { getDefaultSurveyData, type SurveyFormData } from "../../types/schematic";
 
 interface Props {
   onSwitchToMap?: () => void;
@@ -17,16 +20,16 @@ interface Props {
 
 const DEFAULT_KOP: SchematicKop = {
   unit: "UP3 KUPANG - ULP KUPANG",
-  namaPekerjaan: "PEMBANGUNAN JTM & GARDU DISTRIBUSI",
-  lokasi: "KUPANG, NTT",
-  nomorGambar: "01/SKM/SPARK/2026",
+  namaPekerjaan: "",
+  lokasi: "",
+  nomorGambar: "",
   skala: "NOT TO SCALE (NTS)",
-  ukuranKertas: "A4",
-  disurveyOleh: "SURVEYOR SPARK",
+  ukuranKertas: "A2",
+  disurveyOleh: "",
   tglSurvey: new Date().toISOString().slice(0, 10),
-  diperiksaOleh: "TL TEKNIK ULP",
+  diperiksaOleh: "",
   tglPeriksa: new Date().toISOString().slice(0, 10),
-  disetujuiOleh: "ASMAN TEKNIK UP3",
+  disetujuiOleh: "",
   tglSetuju: new Date().toISOString().slice(0, 10),
 };
 
@@ -316,6 +319,12 @@ export default function SchematicWorkspace({ onSwitchToMap }: Props) {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isExportingPng, setIsExportingPng] = useState(false);
+  const [isSurveyDataModalOpen, setIsSurveyDataModalOpen] = useState(false);
+  const [isSurveyExportModalOpen, setIsSurveyExportModalOpen] = useState(false);
+
+  const [surveyData, setSurveyData] = useState<SurveyFormData>(() => {
+    return schematic.surveyData || getDefaultSurveyData(schematic.kop);
+  });
 
   const printAreaRef = useRef<HTMLDivElement>(null);
 
@@ -337,15 +346,44 @@ export default function SchematicWorkspace({ onSwitchToMap }: Props) {
     return calculateRabVolumes(rabLayers);
   }, [rabLayers]);
 
-  // Handle update kop
-  const handleUpdateKop = (updated: Partial<SchematicKop>) => {
+  // Handle update survey data
+  const handleUpdateSurveyData = (updated: SurveyFormData) => {
+    setSurveyData(updated);
     setSchematic(prev => ({
       ...prev,
+      surveyData: updated,
       kop: {
         ...prev.kop,
-        ...updated,
+        namaPekerjaan: updated.kop.namaPekerjaan !== undefined ? updated.kop.namaPekerjaan : prev.kop.namaPekerjaan,
+        nomorGambar: updated.kop.nomorGambar !== undefined ? updated.kop.nomorGambar : prev.kop.nomorGambar,
       },
     }));
+  };
+
+  // Handle update kop
+  const handleUpdateKop = (updated: Partial<SchematicKop>) => {
+    setSchematic(prev => {
+      const nextKop = {
+        ...prev.kop,
+        ...updated,
+      };
+      const nextSurveyData: SurveyFormData = prev.surveyData
+        ? {
+            ...prev.surveyData,
+            kop: {
+              ...prev.surveyData.kop,
+              namaPekerjaan: updated.namaPekerjaan !== undefined ? updated.namaPekerjaan : prev.surveyData.kop.namaPekerjaan,
+              nomorGambar: updated.nomorGambar !== undefined ? updated.nomorGambar : prev.surveyData.kop.nomorGambar,
+            },
+          }
+        : getDefaultSurveyData(nextKop);
+      setSurveyData(nextSurveyData);
+      return {
+        ...prev,
+        kop: nextKop,
+        surveyData: nextSurveyData,
+      };
+    });
   };
 
   // Muat template preset
@@ -353,46 +391,40 @@ export default function SchematicWorkspace({ onSwitchToMap }: Props) {
     if (schematic.nodes.length > 0 && !confirm("Muat preset contoh PB ELEVATE 197 kVA? Gambar kanvas saat ini akan ditimpa.")) {
       return;
     }
-    setSchematic(PRESET_ELEVATE_197KVA);
+    const defaultSurvey = getDefaultSurveyData(PRESET_ELEVATE_197KVA.kop);
+    defaultSurvey.kop.namaPekerjaan = PRESET_ELEVATE_197KVA.kop.namaPekerjaan;
+    defaultSurvey.kop.nomorGambar = PRESET_ELEVATE_197KVA.kop.nomorGambar;
+    const presetWithSurvey: SchematicData = {
+      ...PRESET_ELEVATE_197KVA,
+      surveyData: defaultSurvey,
+    };
+    setSchematic(presetWithSurvey);
+    setSurveyData(defaultSurvey);
   };
 
   // Reset kanvas
   const handleResetCanvas = () => {
     if (confirm("Kosongkan kanvas skematik? Tindakan ini tidak dapat dibatalkan.")) {
+      const resetKop = { ...DEFAULT_KOP };
+      const resetSurvey = getDefaultSurveyData(resetKop);
       setSchematic({
-        kop: { ...DEFAULT_KOP },
+        kop: resetKop,
         nodes: [],
         edges: [],
+        surveyData: resetSurvey,
       });
+      setSurveyData(resetSurvey);
     }
   };
 
-  // Export PDF A4
+  // Export PDF legacy fallback
   const handleExportPdf = async () => {
-    if (!printAreaRef.current) return;
-    setIsExportingPdf(true);
-    try {
-      await exportSchematicToPdf(printAreaRef.current, schematic.kop.namaPekerjaan || "Gambar_Kerja_PLN");
-    } catch (err) {
-      console.error("Gagal export PDF:", err);
-      alert("Gagal melakukan export PDF. Pastikan browser mendukung canvas export.");
-    } finally {
-      setIsExportingPdf(false);
-    }
+    setIsSurveyExportModalOpen(true);
   };
 
-  // Export PNG
+  // Export PNG legacy fallback
   const handleExportPng = async () => {
-    if (!printAreaRef.current) return;
-    setIsExportingPng(true);
-    try {
-      await exportSchematicToPng(printAreaRef.current, schematic.kop.namaPekerjaan || "Gambar_Kerja_PLN");
-    } catch (err) {
-      console.error("Gagal export PNG:", err);
-      alert("Gagal melakukan export PNG.");
-    } finally {
-      setIsExportingPng(false);
-    }
+    setIsSurveyExportModalOpen(true);
   };
 
   return (
@@ -477,26 +509,24 @@ export default function SchematicWorkspace({ onSwitchToMap }: Props) {
             <span className="hidden sm:inline">Export RAB Excel</span>
           </button>
 
-          {/* Export PDF Button */}
+          {/* Panel Isian Data Gambar Survei */}
           <button
-            onClick={handleExportPdf}
-            disabled={isExportingPdf}
-            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-500 text-white transition flex items-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50"
-            title="Export Lembar Kerja A4 PDF dengan Kop dan Legenda"
+            onClick={() => setIsSurveyDataModalOpen(true)}
+            className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-750 text-amber-300 border border-amber-500/40 transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+            title="Buka Panel Isian Data Gambar Survei (Kop, JTM, Gardu, JTR, Pengukuran, Dokumentasi)"
           >
-            <span>📄</span>
-            <span>{isExportingPdf ? "Mencetak..." : "Export PDF (A4)"}</span>
+            <span>📋</span>
+            <span className="hidden sm:inline">Data Gambar Survei</span>
           </button>
 
-          {/* Export PNG */}
+          {/* Export Form Gambar Survei A2 Button */}
           <button
-            onClick={handleExportPng}
-            disabled={isExportingPng}
-            className="hidden xl:flex px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 transition items-center gap-1 cursor-pointer disabled:opacity-50"
-            title="Export Gambar PNG Resolusi Tinggi"
+            onClick={() => setIsSurveyExportModalOpen(true)}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-500 text-white transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+            title="Export Form Resmi Gambar Survei UP3 Kupang (A2 PDF/PNG)"
           >
-            <span>🖼️</span>
-            <span>PNG</span>
+            <span>📄</span>
+            <span>Export Gambar Survei (A2)</span>
           </button>
 
           {/* Switch back to GIS Map Mode */}
@@ -587,6 +617,27 @@ export default function SchematicWorkspace({ onSwitchToMap }: Props) {
         onClose={() => setIsExportModalOpen(false)}
         rabSummary={rabSummary}
         projectName={schematic.kop.namaPekerjaan || "Skematik_PLN"}
+      />
+
+      {/* ─── Modal Isian Data Gambar Survei UP3 Kupang ─── */}
+      <SurveyDataModal
+        open={isSurveyDataModalOpen}
+        onClose={() => setIsSurveyDataModalOpen(false)}
+        surveyData={surveyData}
+        onChange={handleUpdateSurveyData}
+      />
+
+      {/* ─── Modal Export Lembar Gambar Survei A2 ─── */}
+      <SurveyExportModal
+        open={isSurveyExportModalOpen}
+        onClose={() => setIsSurveyExportModalOpen(false)}
+        schematic={schematic}
+        surveyData={surveyData}
+        onChangeSurveyData={handleUpdateSurveyData}
+        onOpenDataModal={() => {
+          setIsSurveyExportModalOpen(false);
+          setIsSurveyDataModalOpen(true);
+        }}
       />
     </div>
   );

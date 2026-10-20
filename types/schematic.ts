@@ -105,6 +105,7 @@ export interface SchematicData {
   edges: SchematicEdge[];
   obstacles?: SchematicObstacle[];
   kop: SchematicKop;
+  surveyData?: SurveyFormData;
 }
 
 export interface LegendaItem {
@@ -114,3 +115,173 @@ export interface LegendaItem {
   vol: number;
   sat: string;
 }
+
+// ─── Tipe Data Form Resmi Gambar Survei UP3 Kupang (A2) ───
+
+export interface BebanJalurRow {
+  id: string;
+  nama: string;
+  r?: string;
+  s?: string;
+  t?: string;
+  n?: string;
+}
+
+export interface TeganganPangkalRow {
+  id: string;
+  nama: string;
+  rn?: string;
+  sn?: string;
+  tn?: string;
+  rs?: string;
+  rt?: string;
+  st?: string;
+}
+
+export interface SurveyPengukuranData {
+  kodeGardu?: string;
+  bebanJalurRows: BebanJalurRow[];
+  teganganPangkalRows: TeganganPangkalRow[];
+  kodeJtr?: string;
+  jtrRn?: string;
+  jtrSn?: string;
+  jtrTn?: string;
+  jtrJurusanRows?: BebanJalurRow[];
+  teganganApp?: string;
+  idpel?: string;
+}
+
+export interface SurveyDataJtm {
+  namaPenyulang?: string;
+  titikPengambilan?: string;
+  konstruksiPengambilan?: string;
+  konduktorPengambilan?: string;
+  ukuranKonduktor?: string;
+}
+
+export interface SurveyDataGardu {
+  kodeGardu?: string;
+  kapasitasGardu?: string;
+  bebanGardu?: string;
+  tipePhbTr?: string;
+}
+
+export interface SurveyDataJtr {
+  jurusanPengambilan?: string;
+  konstruksiEksisting?: string;
+  kabelPowerEksisting?: string;
+  ukuranKabelPower?: string;
+  jarakGarduKeLokasi?: string;
+}
+
+export interface SurveyPersetujuanCol {
+  roleTitle: string; // e.g. "DISETUJUI"
+  staffTitle: string; // e.g. "STAFF TEKNIK"
+  nama: string;
+}
+
+export interface SurveyKopData {
+  namaPekerjaan?: string;
+  dataPelanggan?: string;
+  alamat?: string;
+  permohonan?: string;
+  dayaLama?: string;
+  dayaBaru?: string;
+  keterangan?: string;
+  titikKoordinat?: string;
+  nomorGambar?: string;
+  revisi?: string;
+  halaman?: string;
+  tanggal?: string;
+  persetujuan: [SurveyPersetujuanCol, SurveyPersetujuanCol, SurveyPersetujuanCol];
+}
+
+export interface SurveyDokumentasiData {
+  fotoBangunanPelanggan?: string;
+  fotoTitikPengambilan?: string;
+  fotoLokasiRencanaGarsip?: string;
+}
+
+export interface SurveyFormData {
+  kop: SurveyKopData;
+  jtm: SurveyDataJtm;
+  gardu: SurveyDataGardu;
+  jtr: SurveyDataJtr;
+  pengukuran: SurveyPengukuranData;
+  dokumentasi: SurveyDokumentasiData;
+  customLogoUrl?: string;
+  orientation?: "portrait" | "landscape";
+  includeDokumentasi?: boolean;
+}
+
+export function getDefaultSurveyData(kop?: Partial<SchematicKop>): SurveyFormData {
+  return {
+    kop: {
+      namaPekerjaan: kop?.namaPekerjaan || "",
+      dataPelanggan: "",
+      alamat: "",
+      permohonan: "",
+      dayaLama: "",
+      dayaBaru: "",
+      keterangan: "-",
+      titikKoordinat: "",
+      nomorGambar: kop?.nomorGambar || "",
+      revisi: "",
+      halaman: "1 / 1",
+      tanggal: new Date().toLocaleDateString("id-ID"),
+      persetujuan: [
+        { roleTitle: "DISETUJUI", staffTitle: "STAFF TEKNIK", nama: "" },
+        { roleTitle: "DISETUJUI", staffTitle: "STAFF TEKNIK", nama: "" },
+        { roleTitle: "DISETUJUI", staffTitle: "STAFF TEKNIK", nama: "" },
+      ],
+    },
+    jtm: {
+      namaPenyulang: "",
+      titikPengambilan: "",
+      konstruksiPengambilan: "",
+      konduktorPengambilan: "",
+      ukuranKonduktor: "",
+    },
+    gardu: {
+      kodeGardu: "",
+      kapasitasGardu: "",
+      bebanGardu: "",
+      tipePhbTr: "",
+    },
+    jtr: {
+      jurusanPengambilan: "",
+      konstruksiEksisting: "",
+      kabelPowerEksisting: "",
+      ukuranKabelPower: "",
+      jarakGarduKeLokasi: "",
+    },
+    pengukuran: {
+      kodeGardu: "",
+      bebanJalurRows: [
+        { id: "bj_utama", nama: "BEBAN UTAMA", r: "", s: "", t: "", n: "" },
+        { id: "bj_jurusan_1", nama: "JURUSAN", r: "", s: "", t: "", n: "" },
+      ],
+      teganganPangkalRows: [
+        { id: "tp_utama", nama: "UTAMA", rn: "", sn: "", tn: "", rs: "", rt: "", st: "" },
+        { id: "tp_jurusan_1", nama: "JURUSAN", rn: "", sn: "", tn: "", rs: "", rt: "", st: "" },
+      ],
+      kodeJtr: "",
+      jtrRn: "",
+      jtrSn: "",
+      jtrTn: "",
+      jtrJurusanRows: [
+        { id: "jtr_jurusan_1", nama: "JURUSAN", r: "", s: "", t: "", n: "" },
+      ],
+      teganganApp: "",
+      idpel: "",
+    },
+    dokumentasi: {
+      fotoBangunanPelanggan: "",
+      fotoTitikPengambilan: "",
+      fotoLokasiRencanaGarsip: "",
+    },
+    orientation: "portrait",
+    includeDokumentasi: false,
+  };
+}
+
