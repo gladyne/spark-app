@@ -12,6 +12,7 @@ import RabSummaryPanel, { formatRupiah } from "../sidebar/RabSummaryPanel";
 import RabExportModal from "../modals/RabExportModal";
 import SurveyDataModal from "./export/SurveyDataModal";
 import SurveyExportModal from "./export/SurveyExportModal";
+import SchematicErrorBoundary from "./SchematicErrorBoundary";
 import { getDefaultSurveyData, type SurveyFormData } from "../../types/schematic";
 
 interface Props {
@@ -293,15 +294,48 @@ const PRESET_ELEVATE_197KVA: SchematicData = {
 const STORAGE_KEY = "spark_schematic_v1";
 
 export default function SchematicWorkspace({ onSwitchToMap }: Props) {
-  // Inisialisasi schematic state
+  // Inisialisasi schematic state dengan deep merge & migrasi data legacy
   const [schematic, setSchematic] = useState<SchematicData>(() => {
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (parsed && parsed.nodes && parsed.edges && parsed.kop) {
-            return parsed;
+          if (parsed && Array.isArray(parsed.nodes) && Array.isArray(parsed.edges)) {
+            const safeKop: SchematicKop = {
+              ...DEFAULT_KOP,
+              ...(parsed.kop || {}),
+            };
+            const defaultSurvey = getDefaultSurveyData(safeKop);
+            const safeSurvey: SurveyFormData = parsed.surveyData
+              ? {
+                  ...defaultSurvey,
+                  ...parsed.surveyData,
+                  kop: { ...defaultSurvey.kop, ...(parsed.surveyData.kop || {}) },
+                  jtm: { ...defaultSurvey.jtm, ...(parsed.surveyData.jtm || {}) },
+                  gardu: { ...defaultSurvey.gardu, ...(parsed.surveyData.gardu || {}) },
+                  jtr: { ...defaultSurvey.jtr, ...(parsed.surveyData.jtr || {}) },
+                  pengukuran: {
+                    ...defaultSurvey.pengukuran,
+                    ...(parsed.surveyData.pengukuran || {}),
+                    bebanJalurRows: Array.isArray(parsed.surveyData.pengukuran?.bebanJalurRows)
+                      ? parsed.surveyData.pengukuran.bebanJalurRows
+                      : defaultSurvey.pengukuran.bebanJalurRows,
+                    teganganPangkalRows: Array.isArray(parsed.surveyData.pengukuran?.teganganPangkalRows)
+                      ? parsed.surveyData.pengukuran.teganganPangkalRows
+                      : defaultSurvey.pengukuran.teganganPangkalRows,
+                  },
+                  dokumentasi: { ...defaultSurvey.dokumentasi, ...(parsed.surveyData.dokumentasi || {}) },
+                }
+              : defaultSurvey;
+
+            return {
+              kop: safeKop,
+              nodes: parsed.nodes,
+              edges: parsed.edges,
+              obstacles: Array.isArray(parsed.obstacles) ? parsed.obstacles : [],
+              surveyData: safeSurvey,
+            };
           }
         }
       } catch (e) {
@@ -312,6 +346,8 @@ export default function SchematicWorkspace({ onSwitchToMap }: Props) {
       kop: { ...DEFAULT_KOP },
       nodes: [],
       edges: [],
+      obstacles: [],
+      surveyData: getDefaultSurveyData(DEFAULT_KOP),
     };
   });
 
@@ -558,11 +594,16 @@ export default function SchematicWorkspace({ onSwitchToMap }: Props) {
           >
             {/* Top Area: Interactive 2D Canvas */}
             <div className="flex-1 min-h-[500px] relative border-b-2 border-slate-800 bg-slate-50/20">
-              <SchematicCanvas
-                schematic={schematic}
-                onChange={setSchematic}
-                isPrinting={isExportingPdf || isExportingPng}
-              />
+              <SchematicErrorBoundary
+                fallbackTitle="Terjadi Kendala pada Kanvas Skematik"
+                onReset={handleResetCanvas}
+              >
+                <SchematicCanvas
+                  schematic={schematic}
+                  onChange={setSchematic}
+                  isPrinting={isExportingPdf || isExportingPng}
+                />
+              </SchematicErrorBoundary>
             </div>
 
             {/* Bottom Area: Tabel Legenda & Kop Gambar PLN */}
@@ -628,17 +669,19 @@ export default function SchematicWorkspace({ onSwitchToMap }: Props) {
       />
 
       {/* ─── Modal Export Lembar Gambar Survei A2 ─── */}
-      <SurveyExportModal
-        open={isSurveyExportModalOpen}
-        onClose={() => setIsSurveyExportModalOpen(false)}
-        schematic={schematic}
-        surveyData={surveyData}
-        onChangeSurveyData={handleUpdateSurveyData}
-        onOpenDataModal={() => {
-          setIsSurveyExportModalOpen(false);
-          setIsSurveyDataModalOpen(true);
-        }}
-      />
+      {isSurveyExportModalOpen && (
+        <SurveyExportModal
+          open={isSurveyExportModalOpen}
+          onClose={() => setIsSurveyExportModalOpen(false)}
+          schematic={schematic}
+          surveyData={surveyData}
+          onChangeSurveyData={handleUpdateSurveyData}
+          onOpenDataModal={() => {
+            setIsSurveyExportModalOpen(false);
+            setIsSurveyDataModalOpen(true);
+          }}
+        />
+      )}
     </div>
   );
 }

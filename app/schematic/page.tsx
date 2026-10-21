@@ -22,13 +22,17 @@ const SchematicWorkspace = dynamic(
   }
 );
 
+import SchematicErrorBoundary from "../../components/schematic/SchematicErrorBoundary";
+
 function SchematicContent() {
   const router = useRouter();
 
   return (
-    <SchematicWorkspace
-      onSwitchToMap={() => router.push("/")}
-    />
+    <SchematicErrorBoundary fallbackTitle="Mode Skematik Mengalami Kendala">
+      <SchematicWorkspace
+        onSwitchToMap={() => router.push("/")}
+      />
+    </SchematicErrorBoundary>
   );
 }
 

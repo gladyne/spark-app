@@ -16,7 +16,8 @@ interface Props {
  * - Kop PLN resmi di kanan bawah (otomatis sinkron dengan panel isian)
  */
 export default function SurveyDocumentationSheet({ surveyData }: Props) {
-  const { dokumentasi, kop } = surveyData;
+  const dokumentasi = surveyData?.dokumentasi;
+  const kop = surveyData?.kop;
 
   const renderPhotoBox = (
     caption: string,
@@ -70,17 +71,17 @@ export default function SurveyDocumentationSheet({ surveyData }: Props) {
         <div className="flex-1 flex items-stretch gap-8 px-4 mb-5">
           {renderPhotoBox(
             "FOTO BANGUNAN PELANGGAN",
-            dokumentasi.fotoBangunanPelanggan,
+            dokumentasi?.fotoBangunanPelanggan,
             1
           )}
           {renderPhotoBox(
             "FOTO TITIK PENGAMBILAN",
-            dokumentasi.fotoTitikPengambilan,
+            dokumentasi?.fotoTitikPengambilan,
             2
           )}
           {renderPhotoBox(
             "FOTO LOKASI RENCANA GARSIP",
-            dokumentasi.fotoLokasiRencanaGarsip,
+            dokumentasi?.fotoLokasiRencanaGarsip,
             3
           )}
         </div>

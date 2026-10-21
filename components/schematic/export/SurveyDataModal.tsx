@@ -31,7 +31,7 @@ export default function SurveyDataModal({
     onChange({
       ...surveyData,
       kop: {
-        ...surveyData.kop,
+        ...(surveyData?.kop || {}),
         [field]: val,
       },
     });
@@ -41,7 +41,7 @@ export default function SurveyDataModal({
     onChange({
       ...surveyData,
       jtm: {
-        ...surveyData.jtm,
+        ...(surveyData?.jtm || {}),
         [field]: val,
       },
     });
@@ -51,7 +51,7 @@ export default function SurveyDataModal({
     onChange({
       ...surveyData,
       gardu: {
-        ...surveyData.gardu,
+        ...(surveyData?.gardu || {}),
         [field]: val,
       },
     });
@@ -61,7 +61,7 @@ export default function SurveyDataModal({
     onChange({
       ...surveyData,
       jtr: {
-        ...surveyData.jtr,
+        ...(surveyData?.jtr || {}),
         [field]: val,
       },
     });
@@ -71,26 +71,32 @@ export default function SurveyDataModal({
     onChange({
       ...surveyData,
       pengukuran: {
-        ...surveyData.pengukuran,
+        ...(surveyData?.pengukuran || {}),
         [field]: val,
       },
     });
   };
 
   const updatePersetujuan = (index: 0 | 1 | 2, field: string, val: string) => {
-    const nextCols = [...surveyData.kop.persetujuan] as [
-      (typeof surveyData.kop.persetujuan)[0],
-      (typeof surveyData.kop.persetujuan)[1],
-      (typeof surveyData.kop.persetujuan)[2]
+    const defaultPersetujuan = [
+      { roleTitle: "DISETUJUI", staffTitle: "STAFF TEKNIK", nama: "" },
+      { roleTitle: "DISETUJUI", staffTitle: "STAFF TEKNIK", nama: "" },
+      { roleTitle: "DISETUJUI", staffTitle: "STAFF TEKNIK", nama: "" },
+    ];
+    const sourceCols = surveyData?.kop?.persetujuan || defaultPersetujuan;
+    const nextCols = [...sourceCols] as [
+      (typeof defaultPersetujuan)[0],
+      (typeof defaultPersetujuan)[1],
+      (typeof defaultPersetujuan)[2]
     ];
     nextCols[index] = {
-      ...nextCols[index],
+      ...(nextCols[index] || defaultPersetujuan[index]),
       [field]: val,
     };
     onChange({
       ...surveyData,
       kop: {
-        ...surveyData.kop,
+        ...(surveyData?.kop || {}),
         persetujuan: nextCols,
       },
     });

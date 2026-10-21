@@ -24,10 +24,10 @@ export default function SurveyExportModal({
   onOpenDataModal,
 }: Props) {
   const [orientation, setOrientation] = useState<"portrait" | "landscape">(
-    surveyData.orientation || "portrait"
+    surveyData?.orientation || "portrait"
   );
   const [includeDokumentasi, setIncludeDokumentasi] = useState<boolean>(
-    surveyData.includeDokumentasi || false
+    surveyData?.includeDokumentasi || false
   );
   const [previewPage, setPreviewPage] = useState<"drawing" | "documentation">("drawing");
   const [isExportingPdf, setIsExportingPdf] = useState(false);
@@ -36,6 +36,13 @@ export default function SurveyExportModal({
   // Hidden references for high-res export
   const sheetPrintRef = useRef<HTMLDivElement>(null);
   const docPrintRef = useRef<HTMLDivElement>(null);
+
+  // Preview scale and dimensions (all hooks MUST be declared before any early return)
+  const isLandscape = orientation === "landscape";
+  const sheetWidth = previewPage === "documentation" || isLandscape ? 1980 : 1400;
+  const sheetHeight = previewPage === "documentation" || isLandscape ? 1400 : 1980;
+  const defaultZoom = isLandscape || previewPage === "documentation" ? 0.38 : 0.34;
+  const [previewZoom, setPreviewZoom] = useState(defaultZoom);
 
   if (!open) return null;
 
@@ -67,7 +74,7 @@ export default function SurveyExportModal({
         docElement: includeDokumentasi ? docPrintRef.current : null,
         orientation,
         includeDokumentasi,
-        projectName: surveyData.kop.namaPekerjaan || schematic.kop.namaPekerjaan || "Gambar_Survei_UP3_Kupang",
+        projectName: surveyData?.kop?.namaPekerjaan || schematic?.kop?.namaPekerjaan || "Gambar_Survei_UP3_Kupang",
       });
     } catch (err) {
       console.error("Gagal export PDF A2:", err);
@@ -83,7 +90,7 @@ export default function SurveyExportModal({
     try {
       await exportSurveyToPng({
         sheetElement: sheetPrintRef.current,
-        projectName: surveyData.kop.namaPekerjaan || schematic.kop.namaPekerjaan || "Gambar_Survei_UP3_Kupang",
+        projectName: surveyData?.kop?.namaPekerjaan || schematic?.kop?.namaPekerjaan || "Gambar_Survei_UP3_Kupang",
       });
     } catch (err) {
       console.error("Gagal export PNG A2:", err);
@@ -92,13 +99,6 @@ export default function SurveyExportModal({
       setIsExportingPng(false);
     }
   };
-
-  // Preview scale and dimensions
-  const isLandscape = orientation === "landscape";
-  const sheetWidth = previewPage === "documentation" || isLandscape ? 1980 : 1400;
-  const sheetHeight = previewPage === "documentation" || isLandscape ? 1400 : 1980;
-  const defaultZoom = isLandscape || previewPage === "documentation" ? 0.38 : 0.34;
-  const [previewZoom, setPreviewZoom] = useState(defaultZoom);
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3">
@@ -203,25 +203,25 @@ export default function SurveyExportModal({
                 <div className="flex justify-between">
                   <span className="text-slate-400">Pekerjaan:</span>
                   <span className="font-bold text-slate-200 truncate max-w-[130px]">
-                    {surveyData.kop.namaPekerjaan || schematic.kop.namaPekerjaan || "-"}
+                    {surveyData?.kop?.namaPekerjaan || schematic?.kop?.namaPekerjaan || "-"}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Pelanggan:</span>
                   <span className="font-bold text-slate-200 truncate max-w-[130px]">
-                    {surveyData.kop.dataPelanggan || "-"}
+                    {surveyData?.kop?.dataPelanggan || "-"}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">No. Gambar:</span>
                   <span className="font-mono text-slate-200">
-                    {surveyData.kop.nomorGambar || "-"}
+                    {surveyData?.kop?.nomorGambar || "-"}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Total Simbol:</span>
                   <span className="font-bold text-cyan-400">
-                    {schematic.nodes.length} tiang/gardu, {schematic.edges.length} kabel
+                    {schematic?.nodes?.length || 0} tiang/gardu, {schematic?.edges?.length || 0} kabel
                   </span>
                 </div>
               </div>

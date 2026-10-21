@@ -27,7 +27,7 @@ export default function SurveyDrawingSheet({
   orientation = "portrait",
 }: Props) {
   const isLandscape = orientation === "landscape";
-  const customLogo = surveyData.customLogoUrl;
+  const customLogo = surveyData?.customLogoUrl;
 
   if (isLandscape) {
     // ═══════════════════════════════════════════════════════════════════
@@ -81,7 +81,7 @@ export default function SurveyDrawingSheet({
                 {/* 3. DATA PENGUKURAN JTR & GARDU */}
                 <div className="col-span-7 flex flex-col">
                   <SurveyMeasurementsTable
-                    pengukuran={surveyData.pengukuran}
+                    pengukuran={surveyData?.pengukuran}
                     isLandscape={true}
                     className="h-full"
                   />
@@ -90,9 +90,9 @@ export default function SurveyDrawingSheet({
                 {/* BLOK DATA JARINGAN (JTM, Gardu, JTR) */}
                 <div className="col-span-5 flex flex-col">
                   <SurveyNetworkData
-                    jtm={surveyData.jtm}
-                    gardu={surveyData.gardu}
-                    jtr={surveyData.jtr}
+                    jtm={surveyData?.jtm}
+                    gardu={surveyData?.gardu}
+                    jtr={surveyData?.jtr}
                     isLandscape={true}
                     className="h-full"
                   />
@@ -102,7 +102,7 @@ export default function SurveyDrawingSheet({
 
             {/* Sisi Kanan (Kolom 8 - 12): Kop Gambar Resmi dengan 3 Kolom Persetujuan */}
             <div className="col-span-5 flex flex-col">
-              <SurveyKop kop={surveyData.kop} className="h-full" />
+              <SurveyKop kop={surveyData?.kop} className="h-full" />
             </div>
           </div>
         </div>
@@ -147,7 +147,7 @@ export default function SurveyDrawingSheet({
           {/* Kolom 1 (Kiri - 4 cols): Tabel Pengukuran Gardu & JTR */}
           <div className="col-span-4 flex flex-col">
             <SurveyMeasurementsTable
-              pengukuran={surveyData.pengukuran}
+              pengukuran={surveyData?.pengukuran}
               isLandscape={false}
               className="h-full"
             />
@@ -156,9 +156,9 @@ export default function SurveyDrawingSheet({
           {/* Kolom 2 (Tengah - 4 cols): Blok Data Jaringan */}
           <div className="col-span-4 flex flex-col">
             <SurveyNetworkData
-              jtm={surveyData.jtm}
-              gardu={surveyData.gardu}
-              jtr={surveyData.jtr}
+              jtm={surveyData?.jtm}
+              gardu={surveyData?.gardu}
+              jtr={surveyData?.jtr}
               isLandscape={false}
               className="h-full"
             />
@@ -166,7 +166,7 @@ export default function SurveyDrawingSheet({
 
           {/* Kolom 3 (Kanan - 4 cols): Kop Gambar Resmi */}
           <div className="col-span-4 flex flex-col">
-            <SurveyKop kop={surveyData.kop} className="h-full" />
+            <SurveyKop kop={surveyData?.kop} className="h-full" />
           </div>
         </div>
       </div>
