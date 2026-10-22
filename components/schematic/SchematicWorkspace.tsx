@@ -15,6 +15,7 @@ import SurveyExportModal from "./export/SurveyExportModal";
 import SchematicErrorBoundary from "./SchematicErrorBoundary";
 import MapSyncModal from "./sync/MapSyncModal";
 import type { SparkMapSyncPayload } from "../../lib/schematic/mapSyncEngine";
+import { DRAWING_FRAME } from "../../lib/schematic/mapSyncEngine";
 import { getDefaultSurveyData, type SurveyFormData } from "../../types/schematic";
 
 interface Props {
@@ -524,14 +525,30 @@ export default function SchematicWorkspace({ onSwitchToMap, projectId }: Props) 
     }, 4500);
   };
 
+  // Export Survey Modal Handler with Out-of-Frame Warning
+  const handleOpenExportSurvey = () => {
+    const outsideCount = schematic.nodes.filter(
+      (n) => n.x < 0 || n.x > DRAWING_FRAME.WIDTH || n.y < 0 || n.y > DRAWING_FRAME.HEIGHT
+    ).length;
+
+    if (outsideCount > 0) {
+      const proceed = confirm(
+        `⚠️ Peringatan Sebelum Export:\n\nTerdapat ${outsideCount} aset yang berada di luar batas frame gambar (${DRAWING_FRAME.WIDTH} × ${DRAWING_FRAME.HEIGHT} px).\n\nObjek di luar frame ini TIDAK AKAN masuk ke dalam lembar cetak hasil export.\n\nTetap lanjutkan export?`
+      );
+      if (!proceed) return;
+    }
+
+    setIsSurveyExportModalOpen(true);
+  };
+
   // Export PDF legacy fallback
   const handleExportPdf = async () => {
-    setIsSurveyExportModalOpen(true);
+    handleOpenExportSurvey();
   };
 
   // Export PNG legacy fallback
   const handleExportPng = async () => {
-    setIsSurveyExportModalOpen(true);
+    handleOpenExportSurvey();
   };
 
   return (
@@ -638,7 +655,7 @@ export default function SchematicWorkspace({ onSwitchToMap, projectId }: Props) 
 
           {/* Export Form Gambar Survei A2 Button */}
           <button
-            onClick={() => setIsSurveyExportModalOpen(true)}
+            onClick={handleOpenExportSurvey}
             className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-500 text-white transition flex items-center gap-1.5 cursor-pointer shadow-sm"
             title="Export Form Resmi Gambar Survei UP3 Kupang (A2 PDF/PNG)"
           >

@@ -5,6 +5,7 @@ import type { SchematicData, SurveyFormData } from "../../../types/schematic";
 import SurveyDrawingSheet from "./SurveyDrawingSheet";
 import SurveyDocumentationSheet from "./SurveyDocumentationSheet";
 import { exportSurveyToPdf, exportSurveyToPng } from "../../../lib/exportSurveySheet";
+import { DRAWING_FRAME } from "../../../lib/schematic/mapSyncEngine";
 
 interface Props {
   open: boolean;
@@ -135,6 +136,18 @@ export default function SurveyExportModal({
             </button>
           </div>
         </div>
+
+        {/* Out-of-Frame Warning Banner */}
+        {schematic.nodes.some(n => n.x < 0 || n.x > DRAWING_FRAME.WIDTH || n.y < 0 || n.y > DRAWING_FRAME.HEIGHT) && (
+          <div className="bg-red-950/80 border-b border-red-500/50 px-4 py-2 flex items-center justify-between text-xs text-red-200">
+            <div className="flex items-center gap-2">
+              <span className="text-base animate-pulse">⚠️</span>
+              <span>
+                <strong>Perhatian:</strong> Terdapat {schematic.nodes.filter(n => n.x < 0 || n.x > DRAWING_FRAME.WIDTH || n.y < 0 || n.y > DRAWING_FRAME.HEIGHT).length} aset berada di luar frame gambar (1200 × 500 px) yang berpotensi tidak tercetak lengkap.
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Workspace: Sidebar Options & Scaled Live Preview */}
         <div className="flex-1 flex overflow-hidden">

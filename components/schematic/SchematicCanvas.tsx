@@ -31,6 +31,7 @@ import TiangCascadingSelects from "../common/TiangCascadingSelects";
 import { convertSchematicToRabLayers } from "../../lib/rab/schematicAdapter";
 import { calculateRabVolumes } from "../../lib/rab/rabMapper";
 import { formatRupiah } from "../sidebar/RabSummaryPanel";
+import { DRAWING_FRAME } from "../../lib/schematic/mapSyncEngine";
 
 /**
  * Geometry Helpers untuk Mode Seleksi Multi (Rectangle, Polygon, Lasso, Circle)
@@ -159,6 +160,7 @@ interface Props {
 
 export type ActiveTool =
   | "select"
+  | "hand"
   | "select-rect"
   | "select-polygon"
   | "select-lasso"
@@ -283,6 +285,189 @@ const SchematicCanvas = forwardRef<SchematicCanvasRef, Props>(function Schematic
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const isSpacePressedRef = useRef(false);
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+
+  // Deteksi objek di luar batas frame gambar cetak (1200 x 500)
+  const nodesOutsideFrame = useMemo(() => {
+    return nodes.filter(
+      (n) => n.x < 0 || n.x > DRAWING_FRAME.WIDTH || n.y < 0 || n.y > DRAWING_FRAME.HEIGHT
+    );
+  }, [nodes]);
+  const hasOutsideNodes = nodesOutsideFrame.length > 0;
+
+  // Space key down/up untuk mode Hand Pan
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        const activeEl = document.activeElement;
+        const isInput =
+          activeEl &&
+          (activeEl.tagName === "INPUT" ||
+            activeEl.tagName === "TEXTAREA" ||
+            (activeEl as HTMLElement).isContentEditable);
+        if (!isInput && !isSpacePressedRef.current) {
+          e.preventDefault();
+          isSpacePressedRef.current = true;
+          setIsSpacePressed(true);
+        }
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        isSpacePressedRef.current = false;
+        setIsSpacePressed(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, []);
+
+  // Native non-passive Wheel Event Listener:
+  // - Ctrl/Meta + wheel: Zoom toward mouse pointer
+  // - Shift + wheel: Horizontal scroll
+  // - Normal wheel: Vertical scroll
+  useEffect(() => {
+    const container = canvasContainerRef.current;
+    if (!container) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+
+      if (e.ctrlKey || e.metaKey) {
+        const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+        setZoom((prevZoom) => {
+          const nextZoom = Math.min(3, Math.max(0.25, Number((prevZoom * zoomFactor).toFixed(2))));
+          if (!svgRef.current) return nextZoom;
+          const rect = svgRef.current.getBoundingClientRect();
+          const mouseX = e.clientX - rect.left;
+          const mouseY = e.clientY - rect.top;
+          setPan((prevPan) => ({
+            x: mouseX - (mouseX - prevPan.x) * (nextZoom / prevZoom),
+            y: mouseY - (mouseY - prevPan.y) * (nextZoom / prevZoom),
+          }));
+          return nextZoom;
+        });
+      } else if (e.shiftKey) {
+        setPan((prevPan) => ({
+          ...prevPan,
+          x: prevPan.x - e.deltaY,
+        }));
+      } else {
+        setPan((prevPan) => ({
+          ...prevPan,
+          y: prevPan.y - e.deltaY,
+        }));
+      }
+    };
+
+    container.addEventListener("wheel", handleWheel, { passive: false });
+    return () => container.removeEventListener("wheel", handleWheel);
+  }, []);
+
+  // Fit ke Konten: mengatur zoom dan pan agar seluruh objek terlihat di viewport kanvas
+  const handleFitToContent = useCallback(() => {
+    if (nodes.length === 0 && obstacles.length === 0) {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+
+    let minX = Infinity,
+      maxX = -Infinity,
+      minY = Infinity,
+      maxY = -Infinity;
+    nodes.forEach((n) => {
+      minX = Math.min(minX, n.x - 30);
+      maxX = Math.max(maxX, n.x + 30);
+      minY = Math.min(minY, n.y - 30);
+      maxY = Math.max(maxY, n.y + 30);
+    });
+
+    obstacles.forEach((o) => {
+      if (o.obstacleType === "building") {
+        const hw = (o.width || 80) / 2 + 10;
+        const hh = (o.height || 50) / 2 + 10;
+        minX = Math.min(minX, o.x - hw);
+        maxX = Math.max(maxX, o.x + hw);
+        minY = Math.min(minY, o.y - hh);
+        maxY = Math.max(maxY, o.y + hh);
+      } else if (o.points) {
+        o.points.forEach((p) => {
+          minX = Math.min(minX, p.x - 20);
+          maxX = Math.max(maxX, p.x + 20);
+          minY = Math.min(minY, p.y - 20);
+          maxY = Math.max(maxY, p.y + 20);
+        });
+      }
+    });
+
+    const contentW = Math.max(80, maxX - minX);
+    const contentH = Math.max(80, maxY - minY);
+
+    const containerW = svgRef.current?.clientWidth || 1200;
+    const containerH = svgRef.current?.clientHeight || 500;
+
+    const pad = 60;
+    const scaleX = (containerW - pad * 2) / contentW;
+    const scaleY = (containerH - pad * 2) / contentH;
+    const newZoom = Math.min(1.8, Math.max(0.3, Number(Math.min(scaleX, scaleY).toFixed(2))));
+
+    const midX = (minX + maxX) / 2;
+    const midY = (minY + maxY) / 2;
+
+    const newPanX = containerW / 2 - midX * newZoom;
+    const newPanY = containerH / 2 - midY * newZoom;
+
+    setZoom(newZoom);
+    setPan({ x: Math.round(newPanX), y: Math.round(newPanY) });
+  }, [nodes, obstacles]);
+
+  // Rapikan ke Dalam Frame: Menskalakan seragam dan memusatkan semua node ke [40, 1160] x [40, 460]
+  const handleFitNodesIntoFrame = useCallback(() => {
+    if (nodes.length === 0) return;
+    let minX = Infinity,
+      maxX = -Infinity,
+      minY = Infinity,
+      maxY = -Infinity;
+    nodes.forEach((n) => {
+      minX = Math.min(minX, n.x);
+      maxX = Math.max(maxX, n.x);
+      minY = Math.min(minY, n.y);
+      maxY = Math.max(maxY, n.y);
+    });
+
+    const spanX = Math.max(1, maxX - minX);
+    const spanY = Math.max(1, maxY - minY);
+    const targetW = DRAWING_FRAME.WIDTH - 2 * DRAWING_FRAME.MARGIN; // 1120
+    const targetH = DRAWING_FRAME.HEIGHT - 2 * DRAWING_FRAME.MARGIN; // 420
+    const fitScale = Math.min(1, Math.min(targetW / spanX, targetH / spanY));
+
+    const renderedW = spanX * fitScale;
+    const renderedH = spanY * fitScale;
+    const offX = DRAWING_FRAME.MARGIN + (targetW - renderedW) / 2;
+    const offY = DRAWING_FRAME.MARGIN + (targetH - renderedH) / 2;
+
+    const newNodes = nodes.map((n) => ({
+      ...n,
+      x: Math.round(offX + (n.x - minX) * fitScale),
+      y: Math.round(offY + (n.y - minY) * fitScale),
+    }));
+
+    setPast((prev) => [...prev.slice(-49), schematic]);
+    setFuture([]);
+    onChange({
+      ...schematic,
+      nodes: newNodes,
+    });
+  }, [nodes, schematic, onChange]);
 
   // Interface untuk Smart Alignment Guides (Visio/Figma style)
   interface SmartGuide {
@@ -1714,9 +1899,26 @@ const SchematicCanvas = forwardRef<SchematicCanvasRef, Props>(function Schematic
     }
   };
 
-  // Mouse down pada canvas untuk memulai shape seleksi
+  // Dynamic canvas cursor
+  const canvasCursorClass = useMemo(() => {
+    if (isSpacePressed || activeTool === "hand") {
+      return isPanning ? "cursor-grabbing" : "cursor-grab";
+    }
+    if (activeTool === "select") return "cursor-default";
+    if (
+      activeTool === "select-rect" ||
+      activeTool === "select-polygon" ||
+      activeTool === "select-lasso" ||
+      activeTool === "select-circle"
+    ) {
+      return "cursor-crosshair";
+    }
+    return "cursor-crosshair";
+  }, [isSpacePressed, activeTool, isPanning]);
+
+  // Mouse down pada canvas untuk memulai shape seleksi atau panning
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 1 || e.altKey) {
+    if (e.button === 1 || e.altKey || isSpacePressedRef.current || activeTool === "hand") {
       setIsPanning(true);
       setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
       return;
@@ -1750,7 +1952,7 @@ const SchematicCanvas = forwardRef<SchematicCanvasRef, Props>(function Schematic
 
   // Handler klik pada kanvas (tambah node, clear selection, atau polygon vertex)
   const handleCanvasClick = (e: React.MouseEvent) => {
-    if (isPanning) return;
+    if (isPanning || activeTool === "hand") return;
 
     // Abaikan klik jika baru saja menyelesaikan drag seleksi (lasso/rect/circle)
     if (hasSelectedJustFinishedRef.current) {
@@ -1993,6 +2195,17 @@ const SchematicCanvas = forwardRef<SchematicCanvasRef, Props>(function Schematic
               >
                 <span>👆</span>
                 <span className="hidden xl:inline">Pilih</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTool("hand"); setCableStartNodeId(null); setSelectionShape(null); }}
+                className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition cursor-pointer ${
+                  activeTool === "hand" ? "bg-amber-600 text-white shadow-xs" : "text-slate-300 hover:text-white"
+                }`}
+                title="Hand Tool: Geser / Pan Kanvas (Bisa juga tahan Space + drag, atau drag tombol tengah mouse)"
+              >
+                <span>✋</span>
+                <span className="hidden xl:inline">Hand</span>
               </button>
 
               <button
@@ -2421,13 +2634,22 @@ const SchematicCanvas = forwardRef<SchematicCanvasRef, Props>(function Schematic
               </button>
             </div>
 
-            {/* Reset View */}
+            {/* Fit to Content & Reset View */}
+            <button
+              onClick={handleFitToContent}
+              className="px-2 py-1 text-xs text-amber-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded border border-amber-500/50 cursor-pointer flex items-center gap-1 font-bold shadow-xs transition"
+              title="Fit ke Konten (Atur zoom & posisi agar semua objek terlihat)"
+            >
+              <span>🎯</span>
+              <span className="hidden xl:inline">Fit Konten</span>
+            </button>
             <button
               onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}
-              className="p-1.5 text-xs text-slate-400 hover:text-white hover:bg-slate-800 rounded border border-slate-700 cursor-pointer"
-              title="Reset Zoom & Pan"
+              className="px-2 py-1 text-xs text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 cursor-pointer flex items-center gap-1 transition"
+              title="Reset Zoom & Pan (100%)"
             >
-              🎯
+              <span>🔄</span>
+              <span className="hidden xl:inline">100%</span>
             </button>
           </div>
         </div>
@@ -2436,7 +2658,8 @@ const SchematicCanvas = forwardRef<SchematicCanvasRef, Props>(function Schematic
       {/* ─── Canvas Workspace Area ─── */}
       <div className="flex-1 flex flex-col relative overflow-hidden bg-slate-100">
         <div
-          className="flex-1 w-full h-full relative overflow-hidden cursor-crosshair"
+          ref={canvasContainerRef}
+          className={`flex-1 w-full h-full relative overflow-hidden ${canvasCursorClass}`}
           onMouseDown={handleCanvasMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
@@ -2517,6 +2740,23 @@ const SchematicCanvas = forwardRef<SchematicCanvasRef, Props>(function Schematic
             <div className="absolute top-12 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 text-cyan-300 border border-cyan-500/50 px-3.5 py-1.5 rounded-full text-xs font-bold shadow-xl flex items-center gap-2 animate-in fade-in slide-in-from-top-2 pointer-events-none">
               <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
               <span>{clipboardNotice}</span>
+            </div>
+          )}
+
+          {/* Floating Warning: Aset di luar frame gambar */}
+          {hasOutsideNodes && !isPrinting && (
+            <div className="absolute top-12 left-1/2 -translate-x-1/2 z-30 bg-red-950/95 text-red-200 border border-red-500/80 px-4 py-2 rounded-xl text-xs font-bold shadow-2xl flex items-center gap-3 backdrop-blur-sm animate-in fade-in slide-in-from-top-2">
+              <span className="text-base animate-pulse">⚠️</span>
+              <span>
+                {nodesOutsideFrame.length} aset berada di luar frame gambar (tidak akan masuk hasil export).
+              </span>
+              <button
+                onClick={handleFitNodesIntoFrame}
+                className="px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-sm"
+                title="Menskalakan dan memusatkan seluruh aset agar pas di dalam frame gambar 1200x500"
+              >
+                Rapikan ke Dalam Frame
+              </button>
             </div>
           )}
 
@@ -2624,17 +2864,45 @@ const SchematicCanvas = forwardRef<SchematicCanvasRef, Props>(function Schematic
 
             {/* Transform Layer for Zoom & Pan */}
             <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
-              {/* Background Grid */}
+              {/* Background Grid yang luas agar bisa dieksplorasi bebas */}
               {snapGrid && (
                 <rect
-                  x={-5000}
-                  y={-5000}
-                  width={10000}
-                  height={10000}
+                  x={-10000}
+                  y={-10000}
+                  width={20000}
+                  height={20000}
                   fill="url(#grid-pattern)"
                   pointerEvents="none"
                 />
               )}
+
+              {/* ─── Batas Area Frame Gambar Cetak (1200 x 500) ─── */}
+              <g id="layer-frame-boundary" pointerEvents="none">
+                <rect
+                  x={0}
+                  y={0}
+                  width={DRAWING_FRAME.WIDTH}
+                  height={DRAWING_FRAME.HEIGHT}
+                  fill="#FFFFFF"
+                  fillOpacity={0.6}
+                  stroke={hasOutsideNodes ? "#EF4444" : "#94A3B8"}
+                  strokeWidth={hasOutsideNodes ? 2.5 : 1.5}
+                  strokeDasharray={hasOutsideNodes ? "8 5" : "none"}
+                />
+                <text
+                  x={DRAWING_FRAME.WIDTH - 12}
+                  y={18}
+                  textAnchor="end"
+                  fontSize="10"
+                  fontFamily="sans-serif"
+                  fontWeight="bold"
+                  fill={hasOutsideNodes ? "#EF4444" : "#94A3B8"}
+                >
+                  {hasOutsideNodes
+                    ? `⚠️ ${nodesOutsideFrame.length} ASET DI LUAR FRAME GAMBAR`
+                    : "BATAS AREA GAMBAR CETAK (1200 × 500)"}
+                </text>
+              </g>
 
               {/* ─── Layer 0: Obstacles (Layer Paling Bawah / Background) ─── */}
               {showObstacles && (
@@ -2804,6 +3072,29 @@ const SchematicCanvas = forwardRef<SchematicCanvasRef, Props>(function Schematic
                           </g>
                         )}
                       </>
+                    )}
+
+                    {/* Visual Warning jika node di luar frame gambar */}
+                    {(node.x < 0 || node.x > DRAWING_FRAME.WIDTH || node.y < 0 || node.y > DRAWING_FRAME.HEIGHT) && !isSelected && (
+                      <g pointerEvents="none">
+                        <circle
+                          r={22}
+                          fill="rgba(239, 68, 68, 0.12)"
+                          stroke="#EF4444"
+                          strokeWidth={1.8}
+                          strokeDasharray="4 3"
+                          className="animate-pulse"
+                        />
+                        <text
+                          x={14}
+                          y={-14}
+                          fontSize="11"
+                          fontWeight="bold"
+                          fill="#EF4444"
+                        >
+                          ⚠️
+                        </text>
+                      </g>
                     )}
 
                     {/* Render Schoor jika terpasang pada tiang ini */}

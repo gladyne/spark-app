@@ -73,18 +73,25 @@ export interface MapSyncPlan {
   candidateSchematic: SchematicData;
 }
 
+export const DRAWING_FRAME = {
+  WIDTH: 1200,
+  HEIGHT: 500,
+  MARGIN: 40,
+};
+
 /**
  * Normalisasi dan proyeksi koordinat GPS (lat, lng) ke kanvas skematik (x, y).
  * Menggunakan Equirectangular Projection dengan:
  * - Arah Utara ke ATAS (North is UP)
  * - Skala aspek seragam 1:1 (tidak terdistorsi/stretch)
- * - Margin seimbang di dalam kanvas
+ * - Fit ke dalam batas area gambar (1200 x 500) dengan margin ±40px
+ * - Terpusat secara proporsional di dalam area gambar
  */
 export function projectCoordinatesToCanvas(
   coords: { id: string; lat: number; lng: number }[],
-  canvasWidth = 1400,
-  canvasHeight = 850,
-  margin = 120
+  canvasWidth = DRAWING_FRAME.WIDTH,
+  canvasHeight = DRAWING_FRAME.HEIGHT,
+  margin = DRAWING_FRAME.MARGIN
 ): Map<string, { x: number; y: number }> {
   const result = new Map<string, { x: number; y: number }>();
   if (coords.length === 0) return result;
@@ -443,6 +450,42 @@ export function buildMapSyncPlan(
       }
     }
   });
+
+  // ─── Task 1: Fit-to-Canvas Guard ──────────────────────────────────────────
+  // Periksa apakah ada node baru yang melebihi batas area gambar [40, 1160] x [40, 460]
+  // Jika ya, skalakan SERAGAM (tanpa stretch) dan pusatkan di dalam area gambar.
+  if (toAddNodes.length > 0) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    toAddNodes.forEach((n) => {
+      minX = Math.min(minX, n.x);
+      maxX = Math.max(maxX, n.x);
+      minY = Math.min(minY, n.y);
+      maxY = Math.max(maxY, n.y);
+    });
+
+    const targetW = DRAWING_FRAME.WIDTH - 2 * DRAWING_FRAME.MARGIN; // 1120
+    const targetH = DRAWING_FRAME.HEIGHT - 2 * DRAWING_FRAME.MARGIN; // 420
+
+    if (
+      minX < DRAWING_FRAME.MARGIN ||
+      maxX > DRAWING_FRAME.WIDTH - DRAWING_FRAME.MARGIN ||
+      minY < DRAWING_FRAME.MARGIN ||
+      maxY > DRAWING_FRAME.HEIGHT - DRAWING_FRAME.MARGIN
+    ) {
+      const spanX = Math.max(1, maxX - minX);
+      const spanY = Math.max(1, maxY - minY);
+      const fitScale = Math.min(targetW / spanX, targetH / spanY);
+      const renderedW = spanX * fitScale;
+      const renderedH = spanY * fitScale;
+      const offX = DRAWING_FRAME.MARGIN + (targetW - renderedW) / 2;
+      const offY = DRAWING_FRAME.MARGIN + (targetH - renderedH) / 2;
+
+      toAddNodes.forEach((n) => {
+        n.x = Math.round(offX + (n.x - minX) * fitScale);
+        n.y = Math.round(offY + (n.y - minY) * fitScale);
+      });
+    }
+  }
 
   // Map untuk lookup ID node kandidat berdasarkan sourceId
   const candidateNodeIdBySourceId = new Map<string, string>();
