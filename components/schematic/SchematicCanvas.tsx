@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from "react";
 import type {
   SchematicData,
   SchematicNode,
@@ -147,6 +147,10 @@ function computeNodeLabelOffsets(nodes: SchematicNode[]): Record<string, { dx: n
   return result;
 }
 
+export interface SchematicCanvasRef {
+  pushHistoryState: (prevState: SchematicData) => void;
+}
+
 interface Props {
   schematic: SchematicData;
   onChange: (updated: SchematicData) => void;
@@ -183,7 +187,10 @@ export type ActiveTool =
   | "kabel-tm"
   | "kabel-tr";
 
-export default function SchematicCanvas({ schematic, onChange, isPrinting = false }: Props) {
+const SchematicCanvas = forwardRef<SchematicCanvasRef, Props>(function SchematicCanvas(
+  { schematic, onChange, isPrinting = false }: Props,
+  ref
+) {
   const { nodes, edges } = schematic;
   const obstacles = useMemo(() => schematic.obstacles || [], [schematic.obstacles]);
   const labelOffsets = useMemo(() => computeNodeLabelOffsets(nodes), [nodes]);
@@ -257,6 +264,13 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
   // In-memory Undo / Redo History Stack (maks 50 langkah)
   const [past, setPast] = useState<SchematicData[]>([]);
   const [future, setFuture] = useState<SchematicData[]>([]);
+
+  useImperativeHandle(ref, () => ({
+    pushHistoryState: (prevState: SchematicData) => {
+      setPast((prev) => [...prev.slice(-49), prevState]);
+      setFuture([]);
+    },
+  }));
 
   // Internal Clipboard untuk Copy, Paste & Duplicate
   const [clipboard, setClipboard] = useState<{ nodes: SchematicNode[]; edges: SchematicEdge[] } | null>(null);
@@ -3915,4 +3929,6 @@ export default function SchematicCanvas({ schematic, onChange, isPrinting = fals
       )}
     </div>
   );
-}
+});
+
+export default SchematicCanvas;

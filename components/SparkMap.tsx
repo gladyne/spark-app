@@ -1578,6 +1578,52 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
     };
   });
 
+  // ─── Mirror State Peta ke LocalStorage untuk Sinkronisasi Skematik ─────────
+  useEffect(() => {
+    try {
+      if (typeof window === "undefined") return;
+      const draftLayer = poles.length > 0 ? {
+        id: -1,
+        label: "Draft Aktif",
+        poles,
+        line,
+        jenisJaringan,
+        statusJaringan,
+        offsetSide,
+        jarakGawang,
+        tinggiTiang,
+        materialTiang,
+        kekuatanTiang,
+        posisiTiang,
+        konduktorJenis,
+        rabCategory: (rabCategory === "AUTO" ? undefined : rabCategory) as any,
+        gardus,
+        schoors: effectiveSchoors,
+        konstruksiOverrides,
+        kondukturUkuran,
+        poleData,
+      } : null;
+
+      const syncPayload = {
+        projectId: projectId || undefined,
+        projectName: projectName || "Proyek Tanpa Judul",
+        savedLayers: savedLayers || [],
+        draftLayer,
+        junctions: junctions || [],
+        connections: connections || [],
+        updatedAt: Date.now(),
+      };
+      localStorage.setItem("spark_map_sync_state", JSON.stringify(syncPayload));
+    } catch (e) {
+      console.warn("Gagal menyimpan snapshot sinkronisasi peta:", e);
+    }
+  }, [
+    projectId, projectName, savedLayers, poles, line, jenisJaringan, statusJaringan,
+    offsetSide, jarakGawang, tinggiTiang, materialTiang, kekuatanTiang, posisiTiang,
+    konduktorJenis, rabCategory, gardus, effectiveSchoors, konstruksiOverrides, kondukturUkuran,
+    poleData, junctions, connections,
+  ]);
+
   // ─── Line color / style ───────────────────────────────────────────────────
   let lineColor = "red"; let lineColor2: string | null = null; let lineColor3: string | null = null;
   let isDashed = false; let isDashed2 = false; let isDashed3 = false;
@@ -2233,7 +2279,7 @@ export default function SparkMap({ projectId }: SparkMapProps = {}) {
             <div className="flex items-center gap-1.5">
               {/* Mode Skematik Link */}
               <button 
-                onClick={() => window.location.href = "/schematic"}
+                onClick={() => window.location.href = projectId ? `/schematic?project=${projectId}` : "/schematic"}
                 className="px-2.5 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
                 title="Buka Mode Gambar Skematik (Canvas SLD & Kop PLN)"
               >

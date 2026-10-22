@@ -5,7 +5,7 @@ import type { SchematicData, SchematicNode, SchematicEdge, SchematicKop } from "
 import { convertSchematicToRabLayers } from "../../lib/rab/schematicAdapter";
 import { calculateRabVolumes } from "../../lib/rab/rabMapper";
 import { exportSchematicToPdf, exportSchematicToPng } from "../../lib/exportSchematicPdf";
-import SchematicCanvas from "./SchematicCanvas";
+import SchematicCanvas, { type SchematicCanvasRef } from "./SchematicCanvas";
 import KopGambar from "./KopGambar";
 import TabelLegenda from "./TabelLegenda";
 import RabSummaryPanel, { formatRupiah } from "../sidebar/RabSummaryPanel";
@@ -13,10 +13,13 @@ import RabExportModal from "../modals/RabExportModal";
 import SurveyDataModal from "./export/SurveyDataModal";
 import SurveyExportModal from "./export/SurveyExportModal";
 import SchematicErrorBoundary from "./SchematicErrorBoundary";
+import MapSyncModal from "./sync/MapSyncModal";
+import type { SparkMapSyncPayload } from "../../lib/schematic/mapSyncEngine";
 import { getDefaultSurveyData, type SurveyFormData } from "../../types/schematic";
 
 interface Props {
   onSwitchToMap?: () => void;
+  projectId?: string;
 }
 
 const DEFAULT_KOP: SchematicKop = {
@@ -293,7 +296,7 @@ const PRESET_ELEVATE_197KVA: SchematicData = {
 
 const STORAGE_KEY = "spark_schematic_v1";
 
-export default function SchematicWorkspace({ onSwitchToMap }: Props) {
+export default function SchematicWorkspace({ onSwitchToMap, projectId }: Props) {
   // Inisialisasi schematic state dengan deep merge & migrasi data legacy
   const [schematic, setSchematic] = useState<SchematicData>(() => {
     if (typeof window !== "undefined") {
@@ -357,6 +360,11 @@ export default function SchematicWorkspace({ onSwitchToMap }: Props) {
   const [isExportingPng, setIsExportingPng] = useState(false);
   const [isSurveyDataModalOpen, setIsSurveyDataModalOpen] = useState(false);
   const [isSurveyExportModalOpen, setIsSurveyExportModalOpen] = useState(false);
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [mapSyncData, setMapSyncData] = useState<SparkMapSyncPayload | null>(null);
+  const [syncToast, setSyncToast] = useState<string | null>(null);
+
+  const canvasRef = useRef<SchematicCanvasRef>(null);
 
   const [surveyData, setSurveyData] = useState<SurveyFormData>(() => {
     return schematic.surveyData || getDefaultSurveyData(schematic.kop);
@@ -447,10 +455,73 @@ export default function SchematicWorkspace({ onSwitchToMap }: Props) {
         kop: resetKop,
         nodes: [],
         edges: [],
+        obstacles: [],
         surveyData: resetSurvey,
       });
       setSurveyData(resetSurvey);
     }
+  };
+
+  // Handler Buka Modal Sinkron dari Peta
+  const handleOpenSyncModal = async () => {
+    let payload: SparkMapSyncPayload | null = null;
+
+    try {
+      if (typeof window !== "undefined") {
+        const raw = localStorage.getItem("spark_map_sync_state");
+        if (raw) {
+          payload = JSON.parse(raw);
+        }
+      }
+    } catch (e) {
+      console.warn("Gagal membaca spark_map_sync_state:", e);
+    }
+
+    // Jika projectId ada dan local state belum punya layer, coba ambil dari API project
+    if ((!payload || (!payload.savedLayers?.length && !payload.draftLayer?.poles?.length)) && projectId) {
+      try {
+        const res = await fetch(`/api/projects/${projectId}`);
+        if (res.ok) {
+          const proj = await res.json();
+          if (proj.data?.savedLayers) {
+            payload = {
+              projectId,
+              projectName: proj.name || "Project Peta",
+              savedLayers: proj.data.savedLayers || [],
+              junctions: proj.data.junctions || [],
+              connections: proj.data.connections || [],
+              draftLayer: null,
+              updatedAt: Date.now(),
+            };
+          }
+        }
+      } catch (e) {
+        console.warn("Gagal memuat project dari API:", e);
+      }
+    }
+
+    const hasSaved = Boolean(payload?.savedLayers && payload.savedLayers.length > 0);
+    const hasDraft = Boolean(payload?.draftLayer && payload.draftLayer.poles && payload.draftLayer.poles.length > 0);
+
+    if (!payload || (!hasSaved && !hasDraft)) {
+      alert("Tidak ditemukan data aset pada peta untuk disinkronkan. Silakan gambar tiang atau kabel di Mode Peta terlebih dahulu.");
+      return;
+    }
+
+    setMapSyncData(payload);
+    setIsSyncModalOpen(true);
+  };
+
+  // Handler Terapkan Sinkronisasi (dengan 1 langkah Undo/Redo)
+  const handleApplySync = (newSchematic: SchematicData, summaryMsg: string) => {
+    if (canvasRef.current) {
+      canvasRef.current.pushHistoryState(schematic);
+    }
+    setSchematic(newSchematic);
+    setSyncToast(summaryMsg);
+    setTimeout(() => {
+      setSyncToast(null);
+    }, 4500);
   };
 
   // Export PDF legacy fallback
@@ -516,6 +587,16 @@ export default function SchematicWorkspace({ onSwitchToMap }: Props) {
               🗑️
             </button>
           </div>
+
+          {/* Tombol Sinkron dari Peta */}
+          <button
+            onClick={handleOpenSyncModal}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+            title="Ambil dan sinkronkan hasil gambar aset dari Peta ke Skematik"
+          >
+            <span>🔄</span>
+            <span>Sinkron dari Peta</span>
+          </button>
 
           {/* Toggle RAB Panel */}
           <button
@@ -599,6 +680,7 @@ export default function SchematicWorkspace({ onSwitchToMap }: Props) {
                 onReset={handleResetCanvas}
               >
                 <SchematicCanvas
+                  ref={canvasRef}
                   schematic={schematic}
                   onChange={setSchematic}
                   isPrinting={isExportingPdf || isExportingPng}
@@ -681,6 +763,25 @@ export default function SchematicWorkspace({ onSwitchToMap }: Props) {
             setIsSurveyDataModalOpen(true);
           }}
         />
+      )}
+
+      {/* ─── Modal Sinkron dari Peta ─── */}
+      {isSyncModalOpen && mapSyncData && (
+        <MapSyncModal
+          open={isSyncModalOpen}
+          onClose={() => setIsSyncModalOpen(false)}
+          mapData={mapSyncData}
+          currentSchematic={schematic}
+          onApply={handleApplySync}
+        />
+      )}
+
+      {/* ─── Toast Notifikasi Sinkronisasi ─── */}
+      {syncToast && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-blue-600 text-white px-4 py-2.5 rounded-xl shadow-2xl font-bold text-xs flex items-center gap-2 animate-in fade-in slide-in-from-top-2 border border-blue-400">
+          <span>🔄</span>
+          <span>{syncToast}</span>
+        </div>
       )}
     </div>
   );

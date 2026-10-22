@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
 // Dynamic import with SSR disabled for Canvas & LocalStorage
@@ -26,11 +26,14 @@ import SchematicErrorBoundary from "../../components/schematic/SchematicErrorBou
 
 function SchematicContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectId = searchParams.get("project") || undefined;
 
   return (
     <SchematicErrorBoundary fallbackTitle="Mode Skematik Mengalami Kendala">
       <SchematicWorkspace
-        onSwitchToMap={() => router.push("/")}
+        projectId={projectId}
+        onSwitchToMap={() => router.push(projectId ? `/?project=${projectId}` : "/")}
       />
     </SchematicErrorBoundary>
   );

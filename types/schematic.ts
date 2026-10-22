@@ -22,6 +22,9 @@ export interface SchematicNode {
   y: number;
   label?: string;
   kategori?: "TM" | "TR";
+  sourceId?: string; // ID stabil dari peta (misal: "layer_1_pole_0")
+  geoPlaced?: boolean;
+  schematicPlaced?: boolean;
 
   // Atribut Tiang (Existing / Rencana)
   materialTiang?: "Beton" | "Baja";
@@ -57,12 +60,15 @@ export interface SchematicEdge {
   fromNodeId: string;
   toNodeId: string;
   label?: string;
+  sourceId?: string; // ID stabil span dari peta (misal: "layer_1_span_0_1")
+  geoPlaced?: boolean;
+  schematicPlaced?: boolean;
 
   // Atribut Kabel / Konduktor
   jenisJaringan: string; // SUTM, SKUTM, SKTM, SUTR, SKUTR
   konduktorJenis?: "AAAC" | "AAAC/S" | "MVTIC" | "NA2XSEYBY";
   kondukturUkuran?: number; // 35, 50, 70, 95, 120, 150, 240, 300
-  lengthM: number; // Panjang dalam meter (input manual pengguna)
+  lengthM: number; // Panjang dalam meter (input manual pengguna atau jarak nyata peta)
 }
 
 export interface SchematicKop {
