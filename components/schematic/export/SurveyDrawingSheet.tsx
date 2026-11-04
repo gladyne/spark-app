@@ -93,9 +93,12 @@ export default function SurveyDrawingSheet({
                 </div>
               </div>
 
-              {/* Status Halaman di Header */}
+              {/* Status Halaman di Header (Kontras Tinggi: teks gelap di atas latar putih bersih) */}
               {totalPages > 1 && (
-                <div className="px-3 py-1 bg-slate-100 border border-slate-400 rounded-md text-[11px] font-bold text-slate-800">
+                <div
+                  style={{ backgroundColor: "#ffffff", color: "#0f172a", borderColor: "#0f172a" }}
+                  className="px-3.5 py-1 bg-white border-2 border-slate-950 rounded text-[11.5px] font-black text-slate-950 tracking-wider shadow-xs"
+                >
                   LEMBAR {pageIndex} DARI {totalPages}
                 </div>
               )}
@@ -113,23 +116,22 @@ export default function SurveyDrawingSheet({
           </div>
 
           {/* ─── Bagian Bawah Halaman 2 (Landscape) ─── */}
-          <div className="h-[460px] grid grid-cols-12 gap-3 items-stretch">
+          <div className="grid grid-cols-12 gap-3 items-stretch">
             {/* Sisi Kiri (Kolom 1 - 7): Legenda, Pengukuran, & Data Jaringan */}
-            <div className="col-span-7 flex flex-col justify-between gap-2">
-              {/* Row 1: Legenda Simbol (Hanya simbol aktif di lembar ini) */}
-              <div className="h-[120px] overflow-hidden">
-                <SurveyLegend schematic={pageSchematic} columns={4} />
+            <div className="col-span-7 flex flex-col justify-start gap-2.5">
+              {/* Row 1: Legenda Simbol (Tinggi dinamis sesuai baris, anti-terpotong) */}
+              <div className="w-full">
+                <SurveyLegend schematic={pageSchematic} columns={3} />
               </div>
 
               {/* Row 2: Tabel Pengukuran & Data Jaringan (Halaman 1) ATAU Catatan Sambungan (Halaman 2+) */}
               {showDataBlocks ? (
-                <div className="flex-1 grid grid-cols-12 gap-2">
+                <div className="grid grid-cols-12 gap-2.5 items-start">
                   {/* 3. DATA PENGUKURAN JTR & GARDU */}
                   <div className="col-span-7 flex flex-col">
                     <SurveyMeasurementsTable
                       pengukuran={surveyData?.pengukuran}
                       isLandscape={true}
-                      className="h-full"
                     />
                   </div>
 
@@ -140,43 +142,42 @@ export default function SurveyDrawingSheet({
                       gardu={surveyData?.gardu}
                       jtr={surveyData?.jtr}
                       isLandscape={true}
-                      className="h-full"
                     />
                   </div>
                 </div>
               ) : (
-                /* Panel Catatan & Referensi Sambungan Halaman untuk Halaman 2+ */
-                <div className="flex-1 border border-slate-900 bg-white p-3 flex flex-col justify-between text-[11px] leading-tight">
-                  <div>
-                    <div className="font-extrabold text-[12px] uppercase tracking-wide text-slate-950 border-b border-slate-900 pb-1 mb-2">
-                      CATATAN SAMBUNGAN LEMBAR GAMBAR (HALAMAN {pageIndex} DARI {totalPages})
+                /* Panel Catatan Sambungan Halaman (Hanya tampil jika ada titik sambungan & tinggi seperlunya) */
+                continuationCallouts.length > 0 && (
+                  <div
+                    style={{ backgroundColor: "#ffffff", color: "#0f172a", borderColor: "#0f172a" }}
+                    className="border-2 border-slate-950 bg-white p-3 text-[11px] leading-tight"
+                  >
+                    <div className="font-black text-[12px] uppercase tracking-wide text-slate-950 border-b border-slate-950 pb-1 mb-2 flex items-center justify-between">
+                      <span>CATATAN SAMBUNGAN LEMBAR GAMBAR (HALAMAN {pageIndex} DARI {totalPages})</span>
+                      <span className="text-[10px] font-bold text-blue-700">
+                        {continuationCallouts.length} Titik Sambungan
+                      </span>
                     </div>
-                    <div className="space-y-1.5 text-slate-800">
+                    <div className="space-y-1.5 text-slate-900">
                       <div className="flex gap-2">
-                        <span className="font-bold text-slate-900 w-36">Cakupan Aset Lembar Ini:</span>
-                        <span>
+                        <span className="font-black text-slate-950 w-36">Cakupan Aset:</span>
+                        <span className="font-medium">
                           {pageNodeLabels.length > 0 ? pageNodeLabels.join(", ") : "Jalur Konduktor / Obstacle"}
                         </span>
                       </div>
-                      {continuationCallouts.length > 0 && (
-                        <div className="flex gap-2">
-                          <span className="font-bold text-slate-900 w-36">Titik Sambungan:</span>
-                          <span className="font-semibold text-blue-700">
-                            {continuationCallouts.map((c) => c.label).join("; ")}
-                          </span>
-                        </div>
-                      )}
                       <div className="flex gap-2">
-                        <span className="font-bold text-slate-900 w-36">Data Jaringan Lengkap:</span>
-                        <span>Lihat lembar Halaman 1 untuk Tabel Pengukuran Beban &amp; Data Teknis JTM/Gardu/JTR.</span>
+                        <span className="font-black text-slate-950 w-36">Titik Sambungan:</span>
+                        <span className="font-bold text-blue-700">
+                          {continuationCallouts.map((c) => c.label).join("; ")}
+                        </span>
+                      </div>
+                      <div className="flex gap-2 text-slate-700">
+                        <span className="font-black text-slate-950 w-36">Data Pengukuran:</span>
+                        <span>Lihat lembar Halaman 1 untuk Tabel Pengukuran Beban &amp; Spesifikasi Lengkap.</span>
                       </div>
                     </div>
                   </div>
-
-                  <div className="bg-slate-50 border border-slate-300 p-2 text-[10px] text-slate-600 italic">
-                    * Gambar survei ini terbagi menjadi {totalPages} lembar skala standar A2 agar simbol &amp; dimensi jaringan terbaca presisi tanpa distorsi.
-                  </div>
-                </div>
+                )
               )}
             </div>
 
@@ -209,16 +210,24 @@ export default function SurveyDrawingSheet({
       <div className="absolute inset-6 border border-slate-950 pointer-events-none" />
 
       <div className="w-full h-full p-2 flex flex-col justify-between relative z-10">
-        {/* ─── 1. Header Atas: Legenda (Kiri) & Logo (Kanan) ─── */}
-        <div className="h-[155px] flex items-stretch justify-between gap-4 mb-3">
-          {/* Kiri Atas: Kotak Keterangan Simbol (Legenda Lembar Ini) */}
-          <div className="flex-1 overflow-hidden">
-            <SurveyLegend schematic={pageSchematic} columns={4} />
+        {/* ─── 1. Header Atas: Legenda (Kiri) & Logo + Lencana Halaman (Kanan) ─── */}
+        <div className="flex items-start justify-between gap-4 mb-3">
+          {/* Kiri Atas: Kotak Keterangan Simbol (Legenda Lembar Ini - Dinamis) */}
+          <div className="flex-1">
+            <SurveyLegend schematic={pageSchematic} columns={3} />
           </div>
 
-          {/* Kanan Atas: Logo Area */}
-          <div className="w-[155px] flex-shrink-0 flex items-center justify-center">
-            <SurveyHeaderLogo customLogoUrl={customLogo} size={115} />
+          {/* Kanan Atas: Logo Area & Lencana Halaman */}
+          <div className="w-[180px] flex-shrink-0 flex flex-col items-center justify-between gap-2">
+            <SurveyHeaderLogo customLogoUrl={customLogo} size={110} />
+            {totalPages > 1 && (
+              <div
+                style={{ backgroundColor: "#ffffff", color: "#0f172a", borderColor: "#0f172a" }}
+                className="px-3 py-1 bg-white border-2 border-slate-950 rounded text-[11px] font-black text-slate-950 tracking-wider text-center w-full shadow-xs"
+              >
+                LEMBAR {pageIndex} DARI {totalPages}
+              </div>
+            )}
           </div>
         </div>
 
@@ -233,7 +242,7 @@ export default function SurveyDrawingSheet({
         </div>
 
         {/* ─── 3. Bawah: Pengukuran (Kiri), Data Jaringan (Tengah), Kop (Kanan) ─── */}
-        <div className="h-[520px] grid grid-cols-12 gap-3 items-stretch mt-3">
+        <div className="grid grid-cols-12 gap-3 items-stretch mt-3">
           {showDataBlocks ? (
             <>
               {/* Kolom 1 (Kiri - 4 cols): Tabel Pengukuran Gardu & JTR */}
@@ -241,7 +250,6 @@ export default function SurveyDrawingSheet({
                 <SurveyMeasurementsTable
                   pengukuran={surveyData?.pengukuran}
                   isLandscape={false}
-                  className="h-full"
                 />
               </div>
 
@@ -252,42 +260,43 @@ export default function SurveyDrawingSheet({
                   gardu={surveyData?.gardu}
                   jtr={surveyData?.jtr}
                   isLandscape={false}
-                  className="h-full"
                 />
               </div>
             </>
           ) : (
-            /* Kolom 1 & 2 (Kiri - 8 cols): Catatan Sambungan Lembar */
-            <div className="col-span-8 border border-slate-900 bg-white p-4 flex flex-col justify-between text-[11px] leading-tight">
-              <div>
-                <div className="font-extrabold text-[13px] uppercase tracking-wide text-slate-950 border-b border-slate-900 pb-1.5 mb-2">
-                  CATATAN SAMBUNGAN LEMBAR GAMBAR (HALAMAN {pageIndex} DARI {totalPages})
-                </div>
-                <div className="space-y-2 text-slate-800">
-                  <div className="flex gap-2">
-                    <span className="font-bold text-slate-900 w-44">Cakupan Aset Lembar Ini:</span>
-                    <span>
-                      {pageNodeLabels.length > 0 ? pageNodeLabels.join(", ") : "Jalur Konduktor / Obstacle"}
+            /* Kolom 1 & 2 (Kiri - 8 cols): Catatan Sambungan Lembar (Hanya jika ada titik sambungan) */
+            <div className="col-span-8 flex flex-col justify-start">
+              {continuationCallouts.length > 0 && (
+                <div
+                  style={{ backgroundColor: "#ffffff", color: "#0f172a", borderColor: "#0f172a" }}
+                  className="border-2 border-slate-950 bg-white p-3.5 text-[11px] leading-tight"
+                >
+                  <div className="font-black text-[13px] uppercase tracking-wide text-slate-950 border-b border-slate-950 pb-1.5 mb-2.5 flex items-center justify-between">
+                    <span>CATATAN SAMBUNGAN LEMBAR GAMBAR (HALAMAN {pageIndex} DARI {totalPages})</span>
+                    <span className="text-[10px] font-bold text-blue-700">
+                      {continuationCallouts.length} Titik Sambungan
                     </span>
                   </div>
-                  {continuationCallouts.length > 0 && (
+                  <div className="space-y-2 text-slate-900">
                     <div className="flex gap-2">
-                      <span className="font-bold text-slate-900 w-44">Titik Sambungan:</span>
-                      <span className="font-semibold text-blue-700">
+                      <span className="font-black text-slate-950 w-44">Cakupan Aset Lembar Ini:</span>
+                      <span className="font-medium">
+                        {pageNodeLabels.length > 0 ? pageNodeLabels.join(", ") : "Jalur Konduktor / Obstacle"}
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="font-black text-slate-950 w-44">Titik Sambungan:</span>
+                      <span className="font-bold text-blue-700">
                         {continuationCallouts.map((c) => c.label).join("; ")}
                       </span>
                     </div>
-                  )}
-                  <div className="flex gap-2">
-                    <span className="font-bold text-slate-900 w-44">Data Jaringan Lengkap:</span>
-                    <span>Lihat Halaman 1 untuk Data Pengukuran Beban &amp; Spesifikasi JTM/Gardu/JTR.</span>
+                    <div className="flex gap-2 text-slate-700">
+                      <span className="font-black text-slate-950 w-44">Data Pengukuran Lengkap:</span>
+                      <span>Lihat Halaman 1 untuk Data Pengukuran Beban &amp; Spesifikasi JTM/Gardu/JTR.</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-
-              <div className="bg-slate-50 border border-slate-300 p-2.5 text-[10.5px] text-slate-600 italic">
-                * Gambar survei ini terbagi menjadi {totalPages} lembar skala standar A2 agar simbol &amp; dimensi jaringan terbaca presisi tanpa distorsi.
-              </div>
+              )}
             </div>
           )}
 

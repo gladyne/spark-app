@@ -563,8 +563,8 @@ function computePageCallouts(
       const angleDeg = +(Math.atan2(to.y - from.y, to.x - from.x) * (180 / Math.PI)).toFixed(1);
 
       const label = isExit
-        ? `Lanjut ke Hal. ${targetPageNum} (${remoteNode.label || remoteNode.id})`
-        : `Sambungan dari Hal. ${targetPageNum} (${remoteNode.label || remoteNode.id})`;
+        ? `Ke Hal. ${targetPageNum}`
+        : `Dari Hal. ${targetPageNum}`;
 
       callouts.push({
         edgeId: edge.id,

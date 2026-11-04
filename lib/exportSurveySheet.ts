@@ -61,7 +61,7 @@ export function convertColorToRgb(str: string): string {
       }
     }
 
-    // 2. Fallback cerdas untuk palet warna Tailwind CSS v4
+    // 2. Fallback cerdas untuk palet warna Tailwind CSS v4 berdasarkan tingkat terang (lightness)
     if (
       match.includes("0.129") ||
       match.includes("0.208") ||
@@ -70,19 +70,24 @@ export function convertColorToRgb(str: string): string {
     ) {
       return "rgb(15, 23, 42)"; // slate-900 / slate-950
     }
-    if (match.includes("0.98") || match.includes("0.96")) {
-      return "rgb(255, 255, 255)"; // white / slate-50
-    }
-    if (match.includes("0.87") || match.includes("0.92")) {
-      return "rgb(241, 245, 249)"; // slate-100
+    // Warna terang (lightness > 0.75): putih / slate-50 / slate-100 / slate-200
+    if (
+      match.includes("0.9") ||
+      match.includes("0.8") ||
+      match.includes("0.98") ||
+      match.includes("0.96") ||
+      match.includes("0.87") ||
+      match.includes("0.92")
+    ) {
+      return "rgb(248, 250, 252)"; // slate-50 / slate-100 aman terang
     }
     if (match.includes("0.7") || match.includes("0.6")) {
-      return "rgb(100, 116, 139)"; // slate-500
+      return "rgb(148, 163, 184)"; // slate-400 / slate-500
     }
     if (match.includes("0.4") || match.includes("0.3")) {
       return "rgb(51, 65, 85)"; // slate-700
     }
-    return "rgb(30, 41, 59)"; // slate-800 default safe
+    return "rgb(255, 255, 255)"; // Default safe untuk background adalah putih, bukan gelap!
   });
 
   // Pembersihan ekstra jika masih ada sisa "okrgb"

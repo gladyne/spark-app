@@ -372,32 +372,48 @@ export default function SurveyLegend({ schematic, columns = 3, compact = false }
     return list;
   }, [nodes, edges, obstacles]);
 
-  // Hitung jumlah baris per kolom
-  const effectiveCols = Math.max(1, Math.min(columns, 4));
+  // Hitung kolom dinamis (2-3 kolom sesuai instruksi Task 1)
+  // Simbol yang tampil hanya yang dipakai di gambar
+  const effectiveCols = useMemo(() => {
+    if (usedSymbols.length <= 2) return Math.min(2, usedSymbols.length || 1);
+    // Jika baris banyak, susun jadi 2-3 kolom
+    return Math.min(3, Math.max(2, columns || 3));
+  }, [usedSymbols.length, columns]);
 
   return (
-    <div className="border border-slate-900 bg-white p-2.5 text-slate-900 font-sans select-none flex flex-col justify-start">
-      <div className="font-bold text-[12px] text-slate-900 mb-1.5 pb-0.5 border-b border-slate-300 uppercase tracking-tight">
-        Keterangan Simbol :
+    <div
+      className="border-2 border-slate-950 bg-white p-2.5 text-slate-950 font-sans select-none flex flex-col justify-start w-full"
+      style={{
+        backgroundColor: "#ffffff",
+        color: "#0f172a",
+        borderColor: "#0f172a",
+        minHeight: "fit-content",
+      }}
+    >
+      <div className="font-black text-[12px] text-slate-950 mb-2 pb-1 border-b border-slate-300 uppercase tracking-tight flex items-center justify-between">
+        <span>Keterangan Simbol :</span>
+        <span className="text-[10px] font-bold text-slate-500 lowercase">
+          ({usedSymbols.length} simbol aktif)
+        </span>
       </div>
 
       {usedSymbols.length === 0 ? (
-        <div className="text-[11px] text-slate-400 italic py-2">
-          (Belum ada simbol di kanvas)
+        <div className="text-[11px] text-slate-500 italic py-2">
+          (Belum ada simbol yang dipakai di lembar ini)
         </div>
       ) : (
         <div
-          className={`grid gap-x-4 gap-y-1.5 items-center`}
+          className="grid gap-x-6 gap-y-2 items-center"
           style={{
             gridTemplateColumns: `repeat(${effectiveCols}, minmax(0, 1fr))`,
           }}
         >
-          {usedSymbols.map(sym => (
+          {usedSymbols.map((sym) => (
             <div key={sym.id} className="flex items-center gap-2 min-w-0">
               <div className="w-6 h-5 flex items-center justify-center flex-shrink-0">
                 {sym.renderIcon()}
               </div>
-              <span className="text-[11px] font-semibold text-slate-900 truncate">
+              <span className="text-[11px] font-bold text-slate-950 whitespace-nowrap">
                 : {sym.label}
               </span>
             </div>

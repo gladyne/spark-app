@@ -14,6 +14,8 @@ interface Props {
  * Sesuai referensi:
  * - Portrait: Mengikuti Halaman 1
  * - Landscape: Mengikuti Halaman 2 (dengan kolom Tegangan APP + IDPEL & Beban Jurusan)
+ * 
+ * Kontras tinggi, anti-terpotong, tinggi baris dinamis dihitung dari jumlah baris.
  */
 export default function SurveyMeasurementsTable({
   pengukuran,
@@ -31,63 +33,97 @@ export default function SurveyMeasurementsTable({
   };
 
   // Baris Beban Utama
-  const bebanUtama = p?.bebanJalurRows?.find(r => r.id === "bj_utama") || p?.bebanJalurRows?.[0];
+  const bebanUtama = p?.bebanJalurRows?.find((r) => r.id === "bj_utama") || p?.bebanJalurRows?.[0];
   // Baris Beban Jurusan
-  const bebanJurusanList = p?.bebanJalurRows?.filter(r => r.id !== "bj_utama") || [];
+  const bebanJurusanList = p?.bebanJalurRows?.filter((r) => r.id !== "bj_utama") || [];
 
   // Baris Tegangan Utama
-  const teganganUtama = p?.teganganPangkalRows?.find(r => r.id === "tp_utama") || p?.teganganPangkalRows?.[0];
+  const teganganUtama = p?.teganganPangkalRows?.find((r) => r.id === "tp_utama") || p?.teganganPangkalRows?.[0];
   // Baris Tegangan Jurusan
-  const teganganJurusanList = p?.teganganPangkalRows?.filter(r => r.id !== "tp_utama") || [];
+  const teganganJurusanList = p?.teganganPangkalRows?.filter((r) => r.id !== "tp_utama") || [];
+
+  const thStyle: React.CSSProperties = {
+    backgroundColor: "#f1f5f9",
+    color: "#0f172a",
+    borderColor: "#0f172a",
+  };
+
+  const tdStyle: React.CSSProperties = {
+    backgroundColor: "#ffffff",
+    color: "#0f172a",
+    borderColor: "#0f172a",
+  };
 
   if (isLandscape) {
     // ─── Tampilan Halaman 2 (Landscape A2) ───
     return (
-      <div className={`border border-slate-900 bg-white p-2 text-slate-900 font-sans select-none flex flex-col justify-between text-[9px] ${className}`}>
+      <div
+        className={`border-2 border-slate-950 bg-white p-2.5 text-slate-950 font-sans select-none flex flex-col justify-start text-[9.5px] leading-normal w-full ${className}`}
+        style={{
+          backgroundColor: "#ffffff",
+          color: "#0f172a",
+          borderColor: "#0f172a",
+          minHeight: "fit-content",
+        }}
+      >
         {/* 2. DATA PENGUKURAN GARDU */}
         <div className="mb-2">
-          <div className="font-extrabold text-[10px] uppercase tracking-tight text-slate-900 border-b border-slate-800 pb-0.5 mb-1 flex items-center justify-between">
+          <div className="font-black text-[11px] uppercase tracking-tight text-slate-950 border-b-2 border-slate-950 pb-1 mb-1.5 flex items-center justify-between">
             <span>2. DATA PENGUKURAN GARDU : {kodeGardu || "__________"}</span>
           </div>
 
-          <table className="w-full border-collapse border border-slate-900 text-center text-[9px] leading-tight">
+          <table className="w-full border-collapse border-2 border-slate-950 text-center text-[9.5px] leading-tight">
             <thead>
-              <tr className="bg-slate-100 font-bold border-b border-slate-900">
-                <th className="border-r border-slate-900 p-0.5 text-left pl-1">BEBAN JALUR</th>
-                <th className="border-r border-slate-900 p-0.5 w-11">R (A)</th>
-                <th className="border-r border-slate-900 p-0.5 w-11">S (A)</th>
-                <th className="border-r border-slate-900 p-0.5 w-11">T (A)</th>
-                <th className="p-0.5 w-11">N (A)</th>
+              <tr style={thStyle} className="border-b-2 border-slate-950">
+                <th style={thStyle} className="border-r border-slate-950 p-1 text-left pl-1.5 font-black text-slate-950">
+                  BEBAN JALUR
+                </th>
+                <th style={thStyle} className="border-r border-slate-950 p-1 w-12 font-black text-slate-950">
+                  R (A)
+                </th>
+                <th style={thStyle} className="border-r border-slate-950 p-1 w-12 font-black text-slate-950">
+                  S (A)
+                </th>
+                <th style={thStyle} className="border-r border-slate-950 p-1 w-12 font-black text-slate-950">
+                  T (A)
+                </th>
+                <th style={thStyle} className="p-1 w-12 font-black text-slate-950">
+                  N (A)
+                </th>
               </tr>
             </thead>
             <tbody>
               {/* Beban Utama */}
-              <tr className="border-b border-slate-900">
-                <td className="border-r border-slate-900 p-0.5 font-bold text-left pl-1">BEBAN UTAMA</td>
-                <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(bebanUtama?.r)}</td>
-                <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(bebanUtama?.s)}</td>
-                <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(bebanUtama?.t)}</td>
-                <td className="p-0.5 font-mono">{cellVal(bebanUtama?.n)}</td>
+              <tr className="border-b border-slate-950">
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-bold text-left pl-1.5 text-slate-950">
+                  BEBAN UTAMA
+                </td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(bebanUtama?.r)}</td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(bebanUtama?.s)}</td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(bebanUtama?.t)}</td>
+                <td style={tdStyle} className="p-1 font-mono font-semibold text-slate-900">{cellVal(bebanUtama?.n)}</td>
               </tr>
               {/* Beban Jurusan */}
               {bebanJurusanList.length === 0 ? (
-                <tr className="border-b border-slate-900">
-                  <td className="border-r border-slate-900 p-0.5 text-left pl-1 font-semibold text-slate-700">BEBAN JURUSAN __________</td>
-                  <td className="border-r border-slate-900 p-0.5 font-mono">-</td>
-                  <td className="border-r border-slate-900 p-0.5 font-mono">-</td>
-                  <td className="border-r border-slate-900 p-0.5 font-mono">-</td>
-                  <td className="p-0.5 font-mono">-</td>
+                <tr className="border-b border-slate-950">
+                  <td style={tdStyle} className="border-r border-slate-950 p-1 text-left pl-1.5 font-medium text-slate-800">
+                    BEBAN JURUSAN __________
+                  </td>
+                  <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono text-slate-600">-</td>
+                  <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono text-slate-600">-</td>
+                  <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono text-slate-600">-</td>
+                  <td style={tdStyle} className="p-1 font-mono text-slate-600">-</td>
                 </tr>
               ) : (
                 bebanJurusanList.map((bj, idx) => (
-                  <tr key={bj.id || idx} className="border-b border-slate-900">
-                    <td className="border-r border-slate-900 p-0.5 text-left pl-1 font-semibold">
+                  <tr key={bj.id || idx} className="border-b border-slate-950">
+                    <td style={tdStyle} className="border-r border-slate-950 p-1 text-left pl-1.5 font-semibold text-slate-900">
                       BEBAN {bj.nama || "JURUSAN"} {bj.nama.includes("JURUSAN") ? "" : "__________"}
                     </td>
-                    <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(bj.r)}</td>
-                    <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(bj.s)}</td>
-                    <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(bj.t)}</td>
-                    <td className="p-0.5 font-mono">{cellVal(bj.n)}</td>
+                    <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(bj.r)}</td>
+                    <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(bj.s)}</td>
+                    <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(bj.t)}</td>
+                    <td style={tdStyle} className="p-1 font-mono font-semibold text-slate-900">{cellVal(bj.n)}</td>
                   </tr>
                 ))
               )}
@@ -95,52 +131,70 @@ export default function SurveyMeasurementsTable({
           </table>
 
           {/* Tabel Tegangan Pangkal */}
-          <table className="w-full border-collapse border border-slate-900 text-center text-[9px] leading-tight mt-1">
+          <table className="w-full border-collapse border-2 border-slate-950 text-center text-[9.5px] leading-tight mt-1.5">
             <thead>
-              <tr className="bg-slate-100 font-bold border-b border-slate-900">
-                <th className="border-r border-slate-900 p-0.5 text-left pl-1">TEGANGAN PANGKAL</th>
-                <th className="border-r border-slate-900 p-0.5 w-10">R-N (V)</th>
-                <th className="border-r border-slate-900 p-0.5 w-10">S-N (V)</th>
-                <th className="border-r border-slate-900 p-0.5 w-10">T-N (V)</th>
-                <th className="border-r border-slate-900 p-0.5 w-10">R - S (V)</th>
-                <th className="border-r border-slate-900 p-0.5 w-10">R-T (V)</th>
-                <th className="p-0.5 w-10">S-T (V)</th>
+              <tr style={thStyle} className="border-b-2 border-slate-950">
+                <th style={thStyle} className="border-r border-slate-950 p-1 text-left pl-1.5 font-black text-slate-950">
+                  TEGANGAN PANGKAL
+                </th>
+                <th style={thStyle} className="border-r border-slate-950 p-1 w-11 font-black text-slate-950">
+                  R-N (V)
+                </th>
+                <th style={thStyle} className="border-r border-slate-950 p-1 w-11 font-black text-slate-950">
+                  S-N (V)
+                </th>
+                <th style={thStyle} className="border-r border-slate-950 p-1 w-11 font-black text-slate-950">
+                  T-N (V)
+                </th>
+                <th style={thStyle} className="border-r border-slate-950 p-1 w-11 font-black text-slate-950">
+                  R - S (V)
+                </th>
+                <th style={thStyle} className="border-r border-slate-950 p-1 w-11 font-black text-slate-950">
+                  R-T (V)
+                </th>
+                <th style={thStyle} className="p-1 w-11 font-black text-slate-950">
+                  S-T (V)
+                </th>
               </tr>
             </thead>
             <tbody>
               {/* Tegangan Utama */}
-              <tr className="border-b border-slate-900">
-                <td className="border-r border-slate-900 p-0.5 font-bold text-left pl-1">UTAMA</td>
-                <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(teganganUtama?.rn)}</td>
-                <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(teganganUtama?.sn)}</td>
-                <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(teganganUtama?.tn)}</td>
-                <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(teganganUtama?.rs)}</td>
-                <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(teganganUtama?.rt)}</td>
-                <td className="p-0.5 font-mono">{cellVal(teganganUtama?.st)}</td>
+              <tr className="border-b border-slate-950">
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-bold text-left pl-1.5 text-slate-950">
+                  UTAMA
+                </td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(teganganUtama?.rn)}</td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(teganganUtama?.sn)}</td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(teganganUtama?.tn)}</td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(teganganUtama?.rs)}</td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(teganganUtama?.rt)}</td>
+                <td style={tdStyle} className="p-1 font-mono font-semibold text-slate-900">{cellVal(teganganUtama?.st)}</td>
               </tr>
               {/* Tegangan Jurusan */}
               {teganganJurusanList.length === 0 ? (
-                <tr className="border-b border-slate-900">
-                  <td className="border-r border-slate-900 p-0.5 text-left pl-1 font-semibold text-slate-700">JURUSAN __________</td>
-                  <td className="border-r border-slate-900 p-0.5 font-mono">-</td>
-                  <td className="border-r border-slate-900 p-0.5 font-mono">-</td>
-                  <td className="border-r border-slate-900 p-0.5 font-mono">-</td>
-                  <td className="border-r border-slate-900 p-0.5 font-mono">-</td>
-                  <td className="border-r border-slate-900 p-0.5 font-mono">-</td>
-                  <td className="p-0.5 font-mono">-</td>
+                <tr className="border-b border-slate-950">
+                  <td style={tdStyle} className="border-r border-slate-950 p-1 text-left pl-1.5 font-medium text-slate-800">
+                    JURUSAN __________
+                  </td>
+                  <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono text-slate-600">-</td>
+                  <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono text-slate-600">-</td>
+                  <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono text-slate-600">-</td>
+                  <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono text-slate-600">-</td>
+                  <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono text-slate-600">-</td>
+                  <td style={tdStyle} className="p-1 font-mono text-slate-600">-</td>
                 </tr>
               ) : (
                 teganganJurusanList.map((tj, idx) => (
-                  <tr key={tj.id || idx} className="border-b border-slate-900">
-                    <td className="border-r border-slate-900 p-0.5 text-left pl-1 font-semibold">
+                  <tr key={tj.id || idx} className="border-b border-slate-950">
+                    <td style={tdStyle} className="border-r border-slate-950 p-1 text-left pl-1.5 font-semibold text-slate-900">
                       {tj.nama || "JURUSAN"} {tj.nama.includes("JURUSAN") ? "" : "__________"}
                     </td>
-                    <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(tj.rn)}</td>
-                    <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(tj.sn)}</td>
-                    <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(tj.tn)}</td>
-                    <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(tj.rs)}</td>
-                    <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(tj.rt)}</td>
-                    <td className="p-0.5 font-mono">{cellVal(tj.st)}</td>
+                    <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(tj.rn)}</td>
+                    <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(tj.sn)}</td>
+                    <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(tj.tn)}</td>
+                    <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(tj.rs)}</td>
+                    <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(tj.rt)}</td>
+                    <td style={tdStyle} className="p-1 font-mono font-semibold text-slate-900">{cellVal(tj.st)}</td>
                   </tr>
                 ))
               )}
@@ -150,38 +204,54 @@ export default function SurveyMeasurementsTable({
 
         {/* 3. DATA PENGUKURAN JTR (Versi Halaman 2) */}
         <div>
-          <div className="font-extrabold text-[10px] uppercase tracking-tight text-slate-900 border-b border-slate-800 pb-0.5 mb-1 flex items-center justify-between">
+          <div className="font-black text-[11px] uppercase tracking-tight text-slate-950 border-b-2 border-slate-950 pb-1 mb-1.5 flex items-center justify-between">
             <span>3. DATA PENGUKURAN JTR : {kodeJtr || "__________"}</span>
           </div>
 
-          <table className="w-full border-collapse border border-slate-900 text-center text-[9px] leading-tight">
+          <table className="w-full border-collapse border-2 border-slate-950 text-center text-[9.5px] leading-tight">
             <thead>
-              <tr className="bg-slate-100 font-bold border-b border-slate-900">
-                <th colSpan={3} className="border-r border-slate-900 p-0.5">TEGANGAN PANGKAL</th>
-                <th colSpan={2} className="p-0.5">TEGANGAN APP</th>
+              <tr style={thStyle} className="border-b border-slate-950">
+                <th style={thStyle} colSpan={3} className="border-r border-slate-950 p-1 font-black text-slate-950">
+                  TEGANGAN PANGKAL
+                </th>
+                <th style={thStyle} colSpan={2} className="p-1 font-black text-slate-950">
+                  TEGANGAN APP
+                </th>
               </tr>
-              <tr className="bg-slate-50 border-b border-slate-900">
-                <th className="border-r border-slate-900 p-0.5 w-14">R-N (V)</th>
-                <th className="border-r border-slate-900 p-0.5 w-14">S-N (V)</th>
-                <th className="border-r border-slate-900 p-0.5 w-14">T-N (V)</th>
-                <th className="border-r border-slate-900 p-0.5 text-left pl-1">IDPEL : {p?.idpel || "__________"}</th>
-                <th className="p-0.5 w-16 font-mono font-bold">{p?.teganganApp ? `${p.teganganApp} V` : "-"}</th>
+              <tr style={thStyle} className="border-b-2 border-slate-950">
+                <th style={thStyle} className="border-r border-slate-950 p-1 w-14 font-black text-slate-950">
+                  R-N (V)
+                </th>
+                <th style={thStyle} className="border-r border-slate-950 p-1 w-14 font-black text-slate-950">
+                  S-N (V)
+                </th>
+                <th style={thStyle} className="border-r border-slate-950 p-1 w-14 font-black text-slate-950">
+                  T-N (V)
+                </th>
+                <th style={thStyle} className="border-r border-slate-950 p-1 text-left pl-1.5 font-bold text-slate-950">
+                  IDPEL : {p?.idpel || "__________"}
+                </th>
+                <th style={thStyle} className="p-1 w-18 font-mono font-black text-slate-950">
+                  {p?.teganganApp ? `${p.teganganApp} V` : "-"}
+                </th>
               </tr>
             </thead>
             <tbody>
-              <tr className="border-b border-slate-900">
-                <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(p?.jtrRn)}</td>
-                <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(p?.jtrSn)}</td>
-                <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(p?.jtrTn)}</td>
-                <td colSpan={2} className="p-0.5 bg-slate-50/50"></td>
+              <tr className="border-b border-slate-950">
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(p?.jtrRn)}</td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(p?.jtrSn)}</td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(p?.jtrTn)}</td>
+                <td style={tdStyle} colSpan={2} className="p-1 bg-white"></td>
               </tr>
               {/* Baris Beban Jurusan JTR */}
-              <tr className="border-b border-slate-900 bg-slate-100/60 font-bold">
-                <td className="border-r border-slate-900 p-0.5 text-left pl-1">BEBAN JURUSAN __________</td>
-                <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(p?.jtrJurusanRows?.[0]?.r)}</td>
-                <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(p?.jtrJurusanRows?.[0]?.s)}</td>
-                <td className="border-r border-slate-900 p-0.5 font-mono">{cellVal(p?.jtrJurusanRows?.[0]?.t)}</td>
-                <td className="p-0.5 font-mono">{cellVal(p?.jtrJurusanRows?.[0]?.n)}</td>
+              <tr className="border-b border-slate-950 font-bold">
+                <td style={tdStyle} className="border-r border-slate-950 p-1 text-left pl-1.5 font-bold text-slate-950">
+                  BEBAN JURUSAN __________
+                </td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(p?.jtrJurusanRows?.[0]?.r)}</td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(p?.jtrJurusanRows?.[0]?.s)}</td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(p?.jtrJurusanRows?.[0]?.t)}</td>
+                <td style={tdStyle} className="p-1 font-mono font-semibold text-slate-900">{cellVal(p?.jtrJurusanRows?.[0]?.n)}</td>
               </tr>
             </tbody>
           </table>
@@ -192,50 +262,72 @@ export default function SurveyMeasurementsTable({
 
   // ─── Tampilan Halaman 1 (Portrait A2) ───
   return (
-    <div className={`border border-slate-900 bg-white p-2.5 text-slate-900 font-sans select-none flex flex-col justify-between text-[9.5px] leading-tight ${className}`}>
+    <div
+      className={`border-2 border-slate-950 bg-white p-2.5 text-slate-950 font-sans select-none flex flex-col justify-start text-[9.5px] leading-normal w-full ${className}`}
+      style={{
+        backgroundColor: "#ffffff",
+        color: "#0f172a",
+        borderColor: "#0f172a",
+        minHeight: "fit-content",
+      }}
+    >
       {/* 1. DATA PENGUKURAN GARDU */}
-      <div className="mb-2.5">
-        <div className="font-extrabold text-[10.5px] uppercase tracking-tight text-slate-900 border-b border-slate-800 pb-0.5 mb-1.5 flex items-center justify-between">
+      <div className="mb-2">
+        <div className="font-black text-[11px] uppercase tracking-tight text-slate-950 border-b-2 border-slate-950 pb-1 mb-1.5 flex items-center justify-between">
           <span>1. DATA PENGUKURAN GARDU : {kodeGardu || "__________"}</span>
         </div>
 
         {/* Tabel Beban Jalur */}
-        <table className="w-full border-collapse border border-slate-900 text-center text-[9px] mb-1.5">
+        <table className="w-full border-collapse border-2 border-slate-950 text-center text-[9.5px] mb-1.5">
           <thead>
-            <tr className="bg-slate-100 font-bold border-b border-slate-900">
-              <th className="border-r border-slate-900 p-1 text-left pl-1.5">BEBAN JALUR</th>
-              <th className="border-r border-slate-900 p-1 w-11">R (A)</th>
-              <th className="border-r border-slate-900 p-1 w-11">S (A)</th>
-              <th className="border-r border-slate-900 p-1 w-11">T (A)</th>
-              <th className="p-1 w-11">N (A)</th>
+            <tr style={thStyle} className="border-b-2 border-slate-950">
+              <th style={thStyle} className="border-r border-slate-950 p-1 text-left pl-1.5 font-black text-slate-950">
+                BEBAN JALUR
+              </th>
+              <th style={thStyle} className="border-r border-slate-950 p-1 w-12 font-black text-slate-950">
+                R (A)
+              </th>
+              <th style={thStyle} className="border-r border-slate-950 p-1 w-12 font-black text-slate-950">
+                S (A)
+              </th>
+              <th style={thStyle} className="border-r border-slate-950 p-1 w-12 font-black text-slate-950">
+                T (A)
+              </th>
+              <th style={thStyle} className="p-1 w-12 font-black text-slate-950">
+                N (A)
+              </th>
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b border-slate-900">
-              <td className="border-r border-slate-900 p-1 font-bold text-left pl-1.5">BEBAN UTAMA</td>
-              <td className="border-r border-slate-900 p-1 font-mono">{cellVal(bebanUtama?.r)}</td>
-              <td className="border-r border-slate-900 p-1 font-mono">{cellVal(bebanUtama?.s)}</td>
-              <td className="border-r border-slate-900 p-1 font-mono">{cellVal(bebanUtama?.t)}</td>
-              <td className="p-1 font-mono">{cellVal(bebanUtama?.n)}</td>
+            <tr className="border-b border-slate-950">
+              <td style={tdStyle} className="border-r border-slate-950 p-1 font-bold text-left pl-1.5 text-slate-950">
+                BEBAN UTAMA
+              </td>
+              <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(bebanUtama?.r)}</td>
+              <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(bebanUtama?.s)}</td>
+              <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(bebanUtama?.t)}</td>
+              <td style={tdStyle} className="p-1 font-mono font-semibold text-slate-900">{cellVal(bebanUtama?.n)}</td>
             </tr>
             {bebanJurusanList.length === 0 ? (
-              <tr className="border-b border-slate-900">
-                <td className="border-r border-slate-900 p-1 text-left pl-1.5 font-semibold text-slate-700">JURUSAN __________</td>
-                <td className="border-r border-slate-900 p-1 font-mono">-</td>
-                <td className="border-r border-slate-900 p-1 font-mono">-</td>
-                <td className="border-r border-slate-900 p-1 font-mono">-</td>
-                <td className="p-1 font-mono">-</td>
+              <tr className="border-b border-slate-950">
+                <td style={tdStyle} className="border-r border-slate-950 p-1 text-left pl-1.5 font-medium text-slate-800">
+                  JURUSAN __________
+                </td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono text-slate-600">-</td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono text-slate-600">-</td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono text-slate-600">-</td>
+                <td style={tdStyle} className="p-1 font-mono text-slate-600">-</td>
               </tr>
             ) : (
               bebanJurusanList.map((bj, idx) => (
-                <tr key={bj.id || idx} className="border-b border-slate-900">
-                  <td className="border-r border-slate-900 p-1 text-left pl-1.5 font-semibold">
+                <tr key={bj.id || idx} className="border-b border-slate-950">
+                  <td style={tdStyle} className="border-r border-slate-950 p-1 text-left pl-1.5 font-semibold text-slate-900">
                     {bj.nama || "JURUSAN"} {bj.nama.includes("JURUSAN") ? "" : "__________"}
                   </td>
-                  <td className="border-r border-slate-900 p-1 font-mono">{cellVal(bj.r)}</td>
-                  <td className="border-r border-slate-900 p-1 font-mono">{cellVal(bj.s)}</td>
-                  <td className="border-r border-slate-900 p-1 font-mono">{cellVal(bj.t)}</td>
-                  <td className="p-1 font-mono">{cellVal(bj.n)}</td>
+                  <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(bj.r)}</td>
+                  <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(bj.s)}</td>
+                  <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(bj.t)}</td>
+                  <td style={tdStyle} className="p-1 font-mono font-semibold text-slate-900">{cellVal(bj.n)}</td>
                 </tr>
               ))
             )}
@@ -243,50 +335,68 @@ export default function SurveyMeasurementsTable({
         </table>
 
         {/* Tabel V Pangkal */}
-        <table className="w-full border-collapse border border-slate-900 text-center text-[9px]">
+        <table className="w-full border-collapse border-2 border-slate-950 text-center text-[9.5px]">
           <thead>
-            <tr className="bg-slate-100 font-bold border-b border-slate-900">
-              <th className="border-r border-slate-900 p-1 text-left pl-1.5">V PANGKAL</th>
-              <th className="border-r border-slate-900 p-1 w-9">R-N (V)</th>
-              <th className="border-r border-slate-900 p-1 w-9">S-N (V)</th>
-              <th className="border-r border-slate-900 p-1 w-9">T-N (V)</th>
-              <th className="border-r border-slate-900 p-1 w-9">R - S (V)</th>
-              <th className="border-r border-slate-900 p-1 w-9">R-T (V)</th>
-              <th className="p-1 w-9">S-T (V)</th>
+            <tr style={thStyle} className="border-b-2 border-slate-950">
+              <th style={thStyle} className="border-r border-slate-950 p-1 text-left pl-1.5 font-black text-slate-950">
+                V PANGKAL
+              </th>
+              <th style={thStyle} className="border-r border-slate-950 p-1 w-10 font-black text-slate-950">
+                R-N (V)
+              </th>
+              <th style={thStyle} className="border-r border-slate-950 p-1 w-10 font-black text-slate-950">
+                S-N (V)
+              </th>
+              <th style={thStyle} className="border-r border-slate-950 p-1 w-10 font-black text-slate-950">
+                T-N (V)
+              </th>
+              <th style={thStyle} className="border-r border-slate-950 p-1 w-10 font-black text-slate-950">
+                R - S (V)
+              </th>
+              <th style={thStyle} className="border-r border-slate-950 p-1 w-10 font-black text-slate-950">
+                R-T (V)
+              </th>
+              <th style={thStyle} className="p-1 w-10 font-black text-slate-950">
+                S-T (V)
+              </th>
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b border-slate-900">
-              <td className="border-r border-slate-900 p-1 font-bold text-left pl-1.5">UTAMA</td>
-              <td className="border-r border-slate-900 p-1 font-mono">{cellVal(teganganUtama?.rn)}</td>
-              <td className="border-r border-slate-900 p-1 font-mono">{cellVal(teganganUtama?.sn)}</td>
-              <td className="border-r border-slate-900 p-1 font-mono">{cellVal(teganganUtama?.tn)}</td>
-              <td className="border-r border-slate-900 p-1 font-mono">{cellVal(teganganUtama?.rs)}</td>
-              <td className="border-r border-slate-900 p-1 font-mono">{cellVal(teganganUtama?.rt)}</td>
-              <td className="p-1 font-mono">{cellVal(teganganUtama?.st)}</td>
+            <tr className="border-b border-slate-950">
+              <td style={tdStyle} className="border-r border-slate-950 p-1 font-bold text-left pl-1.5 text-slate-950">
+                UTAMA
+              </td>
+              <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(teganganUtama?.rn)}</td>
+              <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(teganganUtama?.sn)}</td>
+              <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(teganganUtama?.tn)}</td>
+              <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(teganganUtama?.rs)}</td>
+              <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(teganganUtama?.rt)}</td>
+              <td style={tdStyle} className="p-1 font-mono font-semibold text-slate-900">{cellVal(teganganUtama?.st)}</td>
             </tr>
             {teganganJurusanList.length === 0 ? (
-              <tr className="border-b border-slate-900">
-                <td className="border-r border-slate-900 p-1 text-left pl-1.5 font-semibold text-slate-700">JURUSAN __________</td>
-                <td className="border-r border-slate-900 p-1 font-mono">-</td>
-                <td className="border-r border-slate-900 p-1 font-mono">-</td>
-                <td className="border-r border-slate-900 p-1 font-mono">-</td>
-                <td className="border-r border-slate-900 p-1 font-mono">-</td>
-                <td className="border-r border-slate-900 p-1 font-mono">-</td>
-                <td className="p-1 font-mono">-</td>
+              <tr className="border-b border-slate-950">
+                <td style={tdStyle} className="border-r border-slate-950 p-1 text-left pl-1.5 font-medium text-slate-800">
+                  JURUSAN __________
+                </td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono text-slate-600">-</td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono text-slate-600">-</td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono text-slate-600">-</td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono text-slate-600">-</td>
+                <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono text-slate-600">-</td>
+                <td style={tdStyle} className="p-1 font-mono text-slate-600">-</td>
               </tr>
             ) : (
               teganganJurusanList.map((tj, idx) => (
-                <tr key={tj.id || idx} className="border-b border-slate-900">
-                  <td className="border-r border-slate-900 p-1 text-left pl-1.5 font-semibold">
+                <tr key={tj.id || idx} className="border-b border-slate-950">
+                  <td style={tdStyle} className="border-r border-slate-950 p-1 text-left pl-1.5 font-semibold text-slate-900">
                     {tj.nama || "JURUSAN"} {tj.nama.includes("JURUSAN") ? "" : "__________"}
                   </td>
-                  <td className="border-r border-slate-900 p-1 font-mono">{cellVal(tj.rn)}</td>
-                  <td className="border-r border-slate-900 p-1 font-mono">{cellVal(tj.sn)}</td>
-                  <td className="border-r border-slate-900 p-1 font-mono">{cellVal(tj.tn)}</td>
-                  <td className="border-r border-slate-900 p-1 font-mono">{cellVal(tj.rs)}</td>
-                  <td className="border-r border-slate-900 p-1 font-mono">{cellVal(tj.rt)}</td>
-                  <td className="p-1 font-mono">{cellVal(tj.st)}</td>
+                  <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(tj.rn)}</td>
+                  <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(tj.sn)}</td>
+                  <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(tj.tn)}</td>
+                  <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(tj.rs)}</td>
+                  <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(tj.rt)}</td>
+                  <td style={tdStyle} className="p-1 font-mono font-semibold text-slate-900">{cellVal(tj.st)}</td>
                 </tr>
               ))
             )}
@@ -296,25 +406,35 @@ export default function SurveyMeasurementsTable({
 
       {/* 2. DATA PENGUKURAN JTR */}
       <div>
-        <div className="font-extrabold text-[10.5px] uppercase tracking-tight text-slate-900 border-b border-slate-800 pb-0.5 mb-1.5 flex items-center justify-between">
+        <div className="font-black text-[11px] uppercase tracking-tight text-slate-950 border-b-2 border-slate-950 pb-1 mb-1.5 flex items-center justify-between">
           <span>2. DATA PENGUKURAN JTR : {kodeJtr || "__________"}</span>
         </div>
 
-        <table className="w-full border-collapse border border-slate-900 text-center text-[9px]">
+        <table className="w-full border-collapse border-2 border-slate-950 text-center text-[9.5px]">
           <thead>
-            <tr className="bg-slate-100 font-bold border-b border-slate-900">
-              <th className="border-r border-slate-900 p-1 text-left pl-1.5">V PANGKAL</th>
-              <th className="border-r border-slate-900 p-1 w-14">R-N (V)</th>
-              <th className="border-r border-slate-900 p-1 w-14">S-N (V)</th>
-              <th className="p-1 w-14">T-N (V)</th>
+            <tr style={thStyle} className="border-b-2 border-slate-950">
+              <th style={thStyle} className="border-r border-slate-950 p-1 text-left pl-1.5 font-black text-slate-950">
+                V PANGKAL
+              </th>
+              <th style={thStyle} className="border-r border-slate-950 p-1 w-14 font-black text-slate-950">
+                R-N (V)
+              </th>
+              <th style={thStyle} className="border-r border-slate-950 p-1 w-14 font-black text-slate-950">
+                S-N (V)
+              </th>
+              <th style={thStyle} className="p-1 w-14 font-black text-slate-950">
+                T-N (V)
+              </th>
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b border-slate-900">
-              <td className="border-r border-slate-900 p-1 text-left pl-1.5 font-semibold">JURUSAN __________</td>
-              <td className="border-r border-slate-900 p-1 font-mono">{cellVal(p?.jtrRn)}</td>
-              <td className="border-r border-slate-900 p-1 font-mono">{cellVal(p?.jtrSn)}</td>
-              <td className="p-1 font-mono">{cellVal(p?.jtrTn)}</td>
+            <tr className="border-b border-slate-950">
+              <td style={tdStyle} className="border-r border-slate-950 p-1 text-left pl-1.5 font-semibold text-slate-900">
+                JURUSAN __________
+              </td>
+              <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(p?.jtrRn)}</td>
+              <td style={tdStyle} className="border-r border-slate-950 p-1 font-mono font-semibold text-slate-900">{cellVal(p?.jtrSn)}</td>
+              <td style={tdStyle} className="p-1 font-mono font-semibold text-slate-900">{cellVal(p?.jtrTn)}</td>
             </tr>
           </tbody>
         </table>

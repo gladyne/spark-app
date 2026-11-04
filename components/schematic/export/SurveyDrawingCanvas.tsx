@@ -770,65 +770,94 @@ export default function SurveyDrawingCanvas({
           })}
         </g>
 
-        {/* Layer 5: Penanda Sambungan Antar Halaman (Continuation Callouts) */}
+        {/* Layer 5: Penanda Sambungan Antar Halaman (Ringkas & di Tepi Area Gambar - Bug 5) */}
         {continuationCallouts.length > 0 && (
           <g id="export-continuation-callouts">
             {continuationCallouts.map((callout, idx) => {
               const isExit = callout.kind === "exit";
+              const calloutText = isExit ? `${callout.label} ➔` : `⬅ ${callout.label}`;
+              const badgeWidth = Math.max(56, Math.round(calloutText.length * 5.8 + 14));
+              const badgeHeight = 16;
 
-              // Geser badge masuk ke dalam frame agar tidak terpotong tepi kertas
+              // Letakkan penanda ringkas tepat di tepi area gambar (edge boundary)
               let badgeX = callout.x;
               let badgeY = callout.y;
               if (pageBoundary) {
-                const marginX = 85;
-                const marginY = 30;
-                badgeX = Math.max(pageBoundary.x + marginX, Math.min(pageBoundary.x + pageBoundary.width - marginX, callout.x));
-                badgeY = Math.max(pageBoundary.y + marginY, Math.min(pageBoundary.y + pageBoundary.height - marginY, callout.y));
-              }
+                const distToRight = Math.abs(callout.x - (pageBoundary.x + pageBoundary.width));
+                const distToLeft = Math.abs(callout.x - pageBoundary.x);
+                const distToBottom = Math.abs(callout.y - (pageBoundary.y + pageBoundary.height));
+                const distToTop = Math.abs(callout.y - pageBoundary.y);
 
-              const badgeWidth = callout.label.length * 6.8 + 24;
+                const minDist = Math.min(distToRight, distToLeft, distToBottom, distToTop);
+
+                if (minDist === distToRight) {
+                  badgeX = pageBoundary.x + pageBoundary.width - badgeWidth / 2 - 8;
+                  badgeY = Math.max(pageBoundary.y + 18, Math.min(pageBoundary.y + pageBoundary.height - 18, callout.y));
+                } else if (minDist === distToLeft) {
+                  badgeX = pageBoundary.x + badgeWidth / 2 + 8;
+                  badgeY = Math.max(pageBoundary.y + 18, Math.min(pageBoundary.y + pageBoundary.height - 18, callout.y));
+                } else if (minDist === distToBottom) {
+                  badgeY = pageBoundary.y + pageBoundary.height - badgeHeight / 2 - 8;
+                  badgeX = Math.max(pageBoundary.x + badgeWidth / 2 + 8, Math.min(pageBoundary.x + pageBoundary.width - badgeWidth / 2 - 8, callout.x));
+                } else {
+                  badgeY = pageBoundary.y + badgeHeight / 2 + 8;
+                  badgeX = Math.max(pageBoundary.x + badgeWidth / 2 + 8, Math.min(pageBoundary.x + pageBoundary.width - badgeWidth / 2 - 8, callout.x));
+                }
+
+                // Cek tabrakan dengan tiang terdekat; jika dekat, geser sepanjang tepi
+                visibleNodes.forEach((node) => {
+                  if (Math.hypot(node.x - badgeX, node.y - badgeY) < poleRadius + 22) {
+                    if (minDist === distToRight || minDist === distToLeft) {
+                      badgeY += badgeY > node.y ? 22 : -22;
+                    } else {
+                      badgeX += badgeX > node.x ? 25 : -25;
+                    }
+                  }
+                });
+              }
 
               return (
                 <g key={`callout-${idx}`}>
-                  {/* Leader line ke titik potong batas */}
+                  {/* Leader line tipis ke titik potong batas kabel */}
                   <line
                     x1={callout.x}
                     y1={callout.y}
                     x2={badgeX}
                     y2={badgeY}
                     stroke={isExit ? "#2563eb" : "#16a34a"}
-                    strokeWidth={1.8}
-                    strokeDasharray="4 3"
+                    strokeWidth={1}
+                    strokeDasharray="3 2"
+                    opacity={0.8}
                   />
                   <circle
                     cx={callout.x}
                     cy={callout.y}
-                    r={3.5}
+                    r={2.5}
                     fill={isExit ? "#2563eb" : "#16a34a"}
                   />
 
-                  {/* Kotak Callout Sambungan */}
+                  {/* Kotak Callout Sambungan Ringkas */}
                   <g transform={`translate(${badgeX}, ${badgeY})`}>
                     <rect
                       x={-badgeWidth / 2}
-                      y={-10}
+                      y={-badgeHeight / 2}
                       width={badgeWidth}
-                      height={20}
-                      rx={4}
+                      height={badgeHeight}
+                      rx={3}
                       fill={isExit ? "#eff6ff" : "#f0fdf4"}
                       stroke={isExit ? "#2563eb" : "#16a34a"}
-                      strokeWidth={1.4}
+                      strokeWidth={1}
                     />
                     <text
                       x={0}
-                      y={4}
+                      y={Math.round(badgeHeight * 0.24)}
                       textAnchor="middle"
-                      fontSize={9}
+                      fontSize={8}
                       fontWeight={800}
                       fill={isExit ? "#1d4ed8" : "#15803d"}
                       fontFamily="system-ui, sans-serif"
                     >
-                      {isExit ? `${callout.label} ➜` : `⬅ ${callout.label}`}
+                      {calloutText}
                     </text>
                   </g>
                 </g>
