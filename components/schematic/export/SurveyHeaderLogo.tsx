@@ -22,6 +22,7 @@ export default function SurveyHeaderLogo({ customLogoUrl, size = 110 }: Props) {
           src={customLogoUrl}
           alt="Custom Logo"
           className="w-full h-full object-contain"
+          crossOrigin="anonymous"
         />
       </div>
     );

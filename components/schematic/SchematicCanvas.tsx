@@ -32,6 +32,12 @@ import { convertSchematicToRabLayers } from "../../lib/rab/schematicAdapter";
 import { calculateRabVolumes } from "../../lib/rab/rabMapper";
 import { formatRupiah } from "../sidebar/RabSummaryPanel";
 import { DRAWING_FRAME } from "../../lib/schematic/mapSyncEngine";
+import {
+  calculatePagination,
+  type PageBoundary,
+  DRAWING_BOX_DIMS,
+} from "../../lib/schematic/paginationEngine";
+import { tidySchematicLayout } from "../../lib/schematic/autoLayoutEngine";
 
 /**
  * Geometry Helpers untuk Mode Seleksi Multi (Rectangle, Polygon, Lasso, Circle)
@@ -289,13 +295,108 @@ const SchematicCanvas = forwardRef<SchematicCanvasRef, Props>(function Schematic
   const isSpacePressedRef = useRef(false);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
 
-  // Deteksi objek di luar batas frame gambar cetak (1200 x 500)
+  // Paginasi lembar cetak A2
+  const pagination = useMemo(() => {
+    return calculatePagination({
+      schematic,
+      orientation: schematic.surveyForm?.orientation || "landscape",
+      scaleOption: schematic.surveyForm?.paginationScale || "auto",
+      manualPageFrames: schematic.surveyForm?.manualPageFrames,
+    });
+  }, [schematic]);
+
+  const [showPageOverlay, setShowPageOverlay] = useState<boolean>(true);
+  const [draggingPageNumber, setDraggingPageNumber] = useState<number | null>(null);
+  const [pageDragStart, setPageDragStart] = useState<{
+    mouseX: number;
+    mouseY: number;
+    initialX: number;
+    initialY: number;
+  } | null>(null);
+
+  // Deteksi objek di luar batas frame gambar cetak
   const nodesOutsideFrame = useMemo(() => {
+    if (pagination.totalPages > 1) {
+      return nodes.filter((n) => {
+        return !pagination.pages.some(
+          (p) =>
+            n.x >= p.x - 30 &&
+            n.x <= p.x + p.width + 30 &&
+            n.y >= p.y - 30 &&
+            n.y <= p.y + p.height + 30
+        );
+      });
+    }
     return nodes.filter(
       (n) => n.x < 0 || n.x > DRAWING_FRAME.WIDTH || n.y < 0 || n.y > DRAWING_FRAME.HEIGHT
     );
-  }, [nodes]);
+  }, [nodes, pagination]);
   const hasOutsideNodes = nodesOutsideFrame.length > 0;
+
+  // Handlers untuk interaksi geser & kelola bingkai halaman manual
+  const handleStartPageDrag = (e: React.MouseEvent, page: PageBoundary) => {
+    e.stopPropagation();
+    const coords = getCanvasCoords(e);
+    setDraggingPageNumber(page.pageIndex);
+    setPageDragStart({
+      mouseX: coords.x,
+      mouseY: coords.y,
+      initialX: page.x,
+      initialY: page.y,
+    });
+  };
+
+  const handleResetPageFrames = () => {
+    onChange({
+      ...schematic,
+      surveyForm: {
+        ...schematic.surveyForm,
+        manualPageFrames: undefined,
+      } as any,
+    });
+  };
+
+  const handleDeletePageFrame = (pageIndexToDelete: number) => {
+    const current = (schematic.surveyForm?.manualPageFrames || pagination.pages).filter(
+      (p: PageBoundary) => p.pageIndex !== pageIndexToDelete
+    );
+    // Re-index remaining pages
+    const reindexed = current.map((p: PageBoundary, idx: number) => ({ ...p, pageIndex: idx + 1 }));
+    onChange({
+      ...schematic,
+      surveyForm: {
+        ...schematic.surveyForm,
+        manualPageFrames: reindexed,
+      } as any,
+    });
+  };
+
+  const handleAddPageFrame = () => {
+    const current = schematic.surveyForm?.manualPageFrames || pagination.pages;
+    const lastPage = current[current.length - 1];
+    const orientation: "portrait" | "landscape" =
+      schematic.surveyForm?.orientation === "portrait" ? "portrait" : "landscape";
+    const boxDims = DRAWING_BOX_DIMS[orientation];
+    const newPage: PageBoundary = {
+      id: `manual-page-${current.length + 1}`,
+      pageIndex: current.length + 1,
+      x: lastPage ? lastPage.x + lastPage.width * 0.8 : 0,
+      y: lastPage ? lastPage.y : 0,
+      width: boxDims.width,
+      height: boxDims.height,
+      nodeIds: [],
+      referenceNodeIds: [],
+      edgeIds: [],
+      obstacleIds: [],
+    };
+    onChange({
+      ...schematic,
+      surveyForm: {
+        ...schematic.surveyForm,
+        manualPageFrames: [...current, newPage],
+      } as any,
+    });
+  };
 
   // Space key down/up untuk mode Hand Pan
   useEffect(() => {
@@ -1491,6 +1592,46 @@ const SchematicCanvas = forwardRef<SchematicCanvasRef, Props>(function Schematic
     const coords = getCanvasCoords(e);
     setCurrentHoverCoords(coords);
 
+    // Page boundary dragging
+    if (draggingPageNumber !== null && pageDragStart) {
+      const dx = Math.round(coords.x - pageDragStart.mouseX);
+      const dy = Math.round(coords.y - pageDragStart.mouseY);
+      const currentFrames =
+        schematic.surveyForm?.manualPageFrames ||
+        pagination.pages.map((p) => ({
+          id: p.id,
+          pageIndex: p.pageIndex,
+          x: p.x,
+          y: p.y,
+          width: p.width,
+          height: p.height,
+          nodeIds: p.nodeIds,
+          referenceNodeIds: p.referenceNodeIds,
+          edgeIds: p.edgeIds,
+          obstacleIds: p.obstacleIds,
+        }));
+
+      const updatedFrames = currentFrames.map((f: PageBoundary) => {
+        if (f.pageIndex === draggingPageNumber) {
+          return {
+            ...f,
+            x: pageDragStart.initialX + dx,
+            y: pageDragStart.initialY + dy,
+          };
+        }
+        return f;
+      });
+
+      onChange({
+        ...schematic,
+        surveyForm: {
+          ...schematic.surveyForm,
+          manualPageFrames: updatedFrames,
+        } as any,
+      });
+      return;
+    }
+
     // Obstacle resizing
     if (resizingObstacle) {
       const rawDx = coords.x - resizingObstacle.startMouseX;
@@ -1800,6 +1941,11 @@ const SchematicCanvas = forwardRef<SchematicCanvasRef, Props>(function Schematic
     if (rotatingObstacle) {
       pushState(schematic);
       setRotatingObstacle(null);
+    }
+    if (draggingPageNumber !== null) {
+      pushState(schematic);
+      setDraggingPageNumber(null);
+      setPageDragStart(null);
     }
     if (draggingObstacleId) {
       pushState(schematic);
@@ -2569,6 +2715,21 @@ const SchematicCanvas = forwardRef<SchematicCanvasRef, Props>(function Schematic
               <span className="hidden sm:inline">Redo</span>
             </button>
 
+            {/* Tombol Rapikan Layout (Task 3 & 4) */}
+            <button
+              id="btn-canvas-tidy-layout"
+              onClick={() => {
+                if (schematic.nodes && schematic.nodes.length > 0) {
+                  pushState(tidySchematicLayout(schematic));
+                }
+              }}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 bg-amber-600 hover:bg-amber-500 text-white transition cursor-pointer shadow-xs"
+              title="Rapikan tata letak rantai tiang menjadi Single Line Diagram NTS berjarak seragam & rapi (Task 3 & 4)"
+            >
+              <span>✨</span>
+              <span className="hidden lg:inline">Rapikan Layout</span>
+            </button>
+
             <div className="h-5 w-px bg-slate-700 mx-0.5" />
 
             {/* Grid Snap Toggle & Size */}
@@ -2613,6 +2774,42 @@ const SchematicCanvas = forwardRef<SchematicCanvasRef, Props>(function Schematic
               <span>Guide {smartGuides ? "ON" : "OFF"}</span>
             </button>
 
+            {/* Toggle Garis Batas Halaman (Multi-Page Overlay) */}
+            <button
+              onClick={() => setShowPageOverlay(v => !v)}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer flex items-center gap-1.5 ${
+                showPageOverlay
+                  ? "bg-sky-950/80 text-sky-300 border-sky-500/60 shadow-xs"
+                  : "bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200"
+              }`}
+              title="Tampilkan / Sembunyikan garis batas halaman cetak A2. Membantu melihat letak pemotongan halaman sebelum export."
+            >
+              <span>📄</span>
+              <span>Batas Hal. {pagination.totalPages > 1 ? `(${pagination.totalPages}) ` : ""}{showPageOverlay ? "ON" : "OFF"}</span>
+            </button>
+
+            {/* Quick Actions untuk Lembar Manual */}
+            {showPageOverlay && pagination.totalPages > 1 && (
+              <div className="flex items-center gap-1 bg-slate-800/80 p-0.5 rounded-lg border border-slate-700">
+                <button
+                  onClick={handleAddPageFrame}
+                  className="px-2 py-1 text-[11px] text-sky-300 hover:text-white hover:bg-slate-700 rounded transition cursor-pointer font-semibold"
+                  title="Tambah 1 bingkai halaman cetak A2 baru"
+                >
+                  + Lembar
+                </button>
+                {schematic.surveyForm?.manualPageFrames && schematic.surveyForm.manualPageFrames.length > 0 && (
+                  <button
+                    onClick={handleResetPageFrames}
+                    className="px-2 py-1 text-[11px] text-amber-300 hover:text-white hover:bg-slate-700 rounded transition cursor-pointer font-semibold"
+                    title="Reset posisi bingkai halaman kembali ke pembagian otomatis"
+                  >
+                    Reset Auto
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* Zoom Controls */}
             <div className="flex items-center bg-slate-800 rounded-lg p-0.5 border border-slate-700">
               <button
@@ -2636,6 +2833,7 @@ const SchematicCanvas = forwardRef<SchematicCanvasRef, Props>(function Schematic
 
             {/* Fit to Content & Reset View */}
             <button
+              id="btn-fit-konten"
               onClick={handleFitToContent}
               className="px-2 py-1 text-xs text-amber-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded border border-amber-500/50 cursor-pointer flex items-center gap-1 font-bold shadow-xs transition"
               title="Fit ke Konten (Atur zoom & posisi agar semua objek terlihat)"
@@ -2743,8 +2941,32 @@ const SchematicCanvas = forwardRef<SchematicCanvasRef, Props>(function Schematic
             </div>
           )}
 
-          {/* Floating Warning: Aset di luar frame gambar */}
-          {hasOutsideNodes && !isPrinting && (
+          {/* Floating Pagination & Multi-sheet Status Info */}
+          {pagination.totalPages > 1 && !isPrinting && (
+            <div className="absolute top-12 left-1/2 -translate-x-1/2 z-30 bg-sky-950/95 text-sky-200 border border-sky-500/80 px-4 py-2 rounded-xl text-xs font-bold shadow-2xl flex items-center gap-3 backdrop-blur-sm animate-in fade-in slide-in-from-top-2">
+              <span className="text-base">📄</span>
+              <span>
+                Paginasi A2 ({schematic.surveyForm?.orientation || "landscape"}): Terbagi {pagination.totalPages} Halaman ({pagination.effectiveScale.toFixed(2)}x skala).
+              </span>
+              {hasOutsideNodes && (
+                <span className="text-amber-400 font-semibold">
+                  ⚠️ {nodesOutsideFrame.length} aset di luar seluruh lembar.
+                </span>
+              )}
+              {schematic.surveyForm?.manualPageFrames && schematic.surveyForm.manualPageFrames.length > 0 && (
+                <button
+                  onClick={handleResetPageFrames}
+                  className="px-2 py-0.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-[11px] font-bold transition cursor-pointer shadow-sm"
+                  title="Kembalikan posisi bingkai halaman ke pembagian otomatis"
+                >
+                  Reset Auto
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Floating Warning: Aset di luar frame gambar (Mode 1 Lembar) */}
+          {pagination.totalPages <= 1 && hasOutsideNodes && !isPrinting && (
             <div className="absolute top-12 left-1/2 -translate-x-1/2 z-30 bg-red-950/95 text-red-200 border border-red-500/80 px-4 py-2 rounded-xl text-xs font-bold shadow-2xl flex items-center gap-3 backdrop-blur-sm animate-in fade-in slide-in-from-top-2">
               <span className="text-base animate-pulse">⚠️</span>
               <span>
@@ -2876,33 +3098,138 @@ const SchematicCanvas = forwardRef<SchematicCanvasRef, Props>(function Schematic
                 />
               )}
 
-              {/* ─── Batas Area Frame Gambar Cetak (1200 x 500) ─── */}
-              <g id="layer-frame-boundary" pointerEvents="none">
-                <rect
-                  x={0}
-                  y={0}
-                  width={DRAWING_FRAME.WIDTH}
-                  height={DRAWING_FRAME.HEIGHT}
-                  fill="#FFFFFF"
-                  fillOpacity={0.6}
-                  stroke={hasOutsideNodes ? "#EF4444" : "#94A3B8"}
-                  strokeWidth={hasOutsideNodes ? 2.5 : 1.5}
-                  strokeDasharray={hasOutsideNodes ? "8 5" : "none"}
-                />
-                <text
-                  x={DRAWING_FRAME.WIDTH - 12}
-                  y={18}
-                  textAnchor="end"
-                  fontSize="10"
-                  fontFamily="sans-serif"
-                  fontWeight="bold"
-                  fill={hasOutsideNodes ? "#EF4444" : "#94A3B8"}
-                >
-                  {hasOutsideNodes
-                    ? `⚠️ ${nodesOutsideFrame.length} ASET DI LUAR FRAME GAMBAR`
-                    : "BATAS AREA GAMBAR CETAK (1200 × 500)"}
-                </text>
-              </g>
+              {/* ─── Batas Area Frame Paginasi Lembar Cetak A2 ─── */}
+              {showPageOverlay && (
+                <g id="layer-frame-boundary">
+                  {pagination.totalPages > 1 ? (
+                    pagination.pages.map((p) => {
+                      const isDraggingThis = draggingPageNumber === p.pageIndex;
+                      return (
+                        <g key={`page-frame-${p.pageIndex}`} id={`page-frame-${p.pageIndex}`}>
+                          {/* Bingkai Garis Putus-putus Halaman */}
+                          <rect
+                            x={p.x}
+                            y={p.y}
+                            width={p.width}
+                            height={p.height}
+                            fill="#0284C7"
+                            fillOpacity={0.03}
+                            stroke={isDraggingThis ? "#38BDF8" : "#0284C7"}
+                            strokeWidth={isDraggingThis ? 2.5 : 1.8}
+                            strokeDasharray="10 6"
+                            rx={4}
+                            pointerEvents="none"
+                          />
+
+                          {/* Interactive Page Badge & Drag Handle */}
+                          <g
+                            transform={`translate(${p.x + 8}, ${p.y + 8})`}
+                            className="cursor-move select-none"
+                            onMouseDown={(e) => handleStartPageDrag(e, p)}
+                          >
+                            <rect
+                              x={0}
+                              y={0}
+                              width={240}
+                              height={28}
+                              rx={6}
+                              fill="#0F172A"
+                              fillOpacity={0.92}
+                              stroke="#0284C7"
+                              strokeWidth={1.2}
+                            />
+                            <text
+                              x={10}
+                              y={18}
+                              fontSize="11"
+                              fontFamily="sans-serif"
+                              fontWeight="bold"
+                              fill="#38BDF8"
+                              pointerEvents="none"
+                            >
+                              📄 Lembar A2 (Hal. {p.pageIndex} / {pagination.totalPages})
+                            </text>
+                            <text
+                              x={180}
+                              y={18}
+                              fontSize="10"
+                              fontFamily="sans-serif"
+                              fill="#94A3B8"
+                              pointerEvents="none"
+                            >
+                              ✥ Geser
+                            </text>
+                            {/* Delete manual page button */}
+                            {schematic.surveyForm?.manualPageFrames && pagination.totalPages > 1 && (
+                              <g
+                                transform="translate(216, 6)"
+                                className="cursor-pointer hover:opacity-80"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeletePageFrame(p.pageIndex);
+                                }}
+                              >
+                                <rect x={0} y={0} width={16} height={16} rx={3} fill="#EF4444" />
+                                <text
+                                  x={4}
+                                  y={12}
+                                  fontSize="11"
+                                  fontWeight="bold"
+                                  fill="#FFFFFF"
+                                  fontFamily="sans-serif"
+                                >
+                                  ×
+                                </text>
+                              </g>
+                            )}
+                          </g>
+
+                          {/* Dimensi & Skala Info di Pojok Kanan Bawah Bingkai */}
+                          <text
+                            x={p.x + p.width - 12}
+                            y={p.y + p.height - 12}
+                            textAnchor="end"
+                            fontSize="10"
+                            fontFamily="sans-serif"
+                            fontWeight="bold"
+                            fill="#64748B"
+                            pointerEvents="none"
+                          >
+                            {Math.round(p.width)} × {Math.round(p.height)} px ({pagination.effectiveScale.toFixed(2)}x)
+                          </text>
+                        </g>
+                      );
+                    })
+                  ) : (
+                    <g pointerEvents="none">
+                      <rect
+                        x={0}
+                        y={0}
+                        width={DRAWING_FRAME.WIDTH}
+                        height={DRAWING_FRAME.HEIGHT}
+                        fill="#FFFFFF"
+                        fillOpacity={0.6}
+                        stroke={hasOutsideNodes ? "#EF4444" : "#94A3B8"}
+                        strokeWidth={hasOutsideNodes ? 2.5 : 1.5}
+                        strokeDasharray={hasOutsideNodes ? "8 5" : "none"}
+                      />
+                      <text
+                        x={DRAWING_FRAME.WIDTH - 12}
+                        y={18}
+                        textAnchor="end"
+                        fontSize="10"
+                        fontFamily="sans-serif"
+                        fontWeight="bold"
+                        fill={hasOutsideNodes ? "#EF4444" : "#94A3B8"}
+                      >
+                        {hasOutsideNodes
+                          ? `⚠️ ${nodesOutsideFrame.length} ASET DI LUAR FRAME GAMBAR`
+                          : "BATAS AREA GAMBAR CETAK (1200 × 500) — 1 HALAMAN"}
+                      </text>
+                    </g>
+                  )}
+                </g>
+              )}
 
               {/* ─── Layer 0: Obstacles (Layer Paling Bawah / Background) ─── */}
               {showObstacles && (
@@ -2995,32 +3322,49 @@ const SchematicCanvas = forwardRef<SchematicCanvasRef, Props>(function Schematic
                       strokeLinecap="round"
                     />
 
-                    {/* Cable Length Tag (Meter) */}
-                    <g transform={`translate(${midX}, ${midY - 8})`}>
-                      <rect
-                        x={-22}
-                        y={-7.5}
-                        width={44}
-                        height={15}
-                        rx={4}
-                        fill="white"
-                        stroke={isSelected ? "#0284c7" : "#CBD5E1"}
-                        strokeWidth={isSelected ? 1.8 : 1}
-                        className="shadow-xs"
-                      />
-                      <text
-                        x={0}
-                        y={3.5}
-                        textAnchor="middle"
-                        fontSize="10"
-                        fontWeight="900"
-                        fill={isSelected ? "#0284c7" : "#1D4ED8"}
-                        fontFamily="system-ui, -apple-system, sans-serif"
-                        className="select-none"
-                      >
-                        {edge.lengthM} m
-                      </text>
-                    </g>
+                    {/* Cable Length Tag (Meter) - Di atas atau bawah kabel, sejajar kabel */}
+                    {(() => {
+                      const dx = toNode.x - fromNode.x;
+                      const dy = toNode.y - fromNode.y;
+                      let angle = +(Math.atan2(dy, dx) * (180 / Math.PI)).toFixed(1);
+                      if (angle > 90) angle -= 180;
+                      else if (angle < -90) angle += 180;
+
+                      // Jarak offset di atas garis kabel
+                      const offsetDist = 14;
+                      const rad = (angle * Math.PI) / 180;
+                      const aboveWorldY = midY - Math.cos(rad) * offsetDist;
+                      const isTooCloseToTop = aboveWorldY < 25;
+                      const offsetY = isTooCloseToTop ? offsetDist : -offsetDist;
+
+                      return (
+                        <g transform={`translate(${midX}, ${midY}) rotate(${angle})`}>
+                          <rect
+                            x={-20}
+                            y={offsetY - 7}
+                            width={40}
+                            height={14}
+                            rx={4}
+                            fill="white"
+                            stroke={isSelected ? "#0284c7" : "#CBD5E1"}
+                            strokeWidth={isSelected ? 1.8 : 1}
+                            className="shadow-xs"
+                          />
+                          <text
+                            x={0}
+                            y={offsetY + 3.5}
+                            textAnchor="middle"
+                            fontSize="9"
+                            fontWeight="800"
+                            fill={isSelected ? "#0284c7" : "#1D4ED8"}
+                            fontFamily="system-ui, -apple-system, sans-serif"
+                            className="select-none"
+                          >
+                            {edge.lengthM} m
+                          </text>
+                        </g>
+                      );
+                    })()}
                   </g>
                 );
               })}

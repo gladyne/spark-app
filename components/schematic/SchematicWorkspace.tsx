@@ -17,6 +17,8 @@ import MapSyncModal from "./sync/MapSyncModal";
 import type { SparkMapSyncPayload } from "../../lib/schematic/mapSyncEngine";
 import { DRAWING_FRAME } from "../../lib/schematic/mapSyncEngine";
 import { getDefaultSurveyData, type SurveyFormData } from "../../types/schematic";
+import { calculatePagination } from "../../lib/schematic/paginationEngine";
+import { tidySchematicLayout } from "../../lib/schematic/autoLayoutEngine";
 
 interface Props {
   onSwitchToMap?: () => void;
@@ -295,6 +297,132 @@ const PRESET_ELEVATE_197KVA: SchematicData = {
   ],
 };
 
+// Preset uji coba resmi: 13 Tiang / 600m dengan 1 Obstacle Bangunan & Jalan (Paginasi Lembar A2)
+const PRESET_13_TIANG_600M: SchematicData = {
+  kop: {
+    unit: "UP3 KUPANG - ULP KUPANG",
+    namaPekerjaan: "PERLUASAN JARINGAN DISTRIBUSI SUTM 20 kV (13 TIANG / 600 M)",
+    lokasi: "DESA OEBELO, KAB. KUPANG, NTT",
+    nomorGambar: "03/JTM-600M/SPARK/2026",
+    skala: "NOT TO SCALE (NTS)",
+    ukuranKertas: "A2",
+    disurveyOleh: "SURVEYOR SPARK",
+    tglSurvey: new Date().toISOString().slice(0, 10),
+    diperiksaOleh: "TL TEKNIK ULP",
+    tglPeriksa: new Date().toISOString().slice(0, 10),
+    disetujuiOleh: "ASMAN TEKNIK UP3",
+    tglSetuju: new Date().toISOString().slice(0, 10),
+  },
+  nodes: Array.from({ length: 13 }, (_, i) => {
+    const num = i + 1;
+    const label = `T.${String(num).padStart(2, "0")}`;
+    return {
+      id: `pole_${num}`,
+      type: (num === 1 ? "tiang-existing" : "tiang-tm") as any,
+      x: 100 + i * 200,
+      y: 250,
+      label,
+      tinggiTiang: 12,
+      kekuatanTiang: num === 1 || num === 13 ? 350 : 200,
+      materialTiang: "Beton" as const,
+      posisiTiang: num === 1 || num === 13 ? "Ujung" : "Tumpu",
+      konstruksi: num === 1 || num === 13 ? "A3" : "A1",
+    };
+  }),
+  edges: Array.from({ length: 12 }, (_, i) => {
+    const num = i + 1;
+    return {
+      id: `edge_${num}_${num + 1}`,
+      type: "kabel-tm" as const,
+      fromNodeId: `pole_${num}`,
+      toNodeId: `pole_${num + 1}`,
+      lengthM: 50,
+      jenisJaringan: "SUTM",
+      konduktorJenis: "AAAC/S",
+      kondukturUkuran: 70,
+    };
+  }),
+  obstacles: [
+    {
+      id: "obs_bangunan_1",
+      type: "obstacle",
+      obstacleType: "building",
+      x: 1300,
+      y: 160,
+      width: 140,
+      height: 80,
+      rotationDeg: 0,
+      label: "Gudang Warga",
+      color: "#ea580c",
+    },
+    {
+      id: "obs_road_1",
+      type: "obstacle",
+      obstacleType: "road",
+      x: 50,
+      y: 310,
+      points: [
+        { x: 50, y: 310 },
+        { x: 1300, y: 310 },
+        { x: 2550, y: 310 },
+      ],
+      roadWidth: 40,
+      label: "Jl. Timor Raya",
+    },
+  ],
+};
+
+// Preset resmi pengujian bug: 29 Tiang (T.01 - T.29) posisi diagonal rapat hasil proyeksi peta
+const PRESET_29_TIANG_DIAGONAL: SchematicData = {
+  kop: {
+    unit: "UP3 KUPANG - ULP KUPANG",
+    namaPekerjaan: "PERLUASAN SUTM 20 kV 29 TIANG (T.01 - T.29 DIAGONAL)",
+    lokasi: "KEC. KUPANG TIMUR, NTT",
+    nomorGambar: "04/SUTM-29T/SPARK/2026",
+    skala: "NOT TO SCALE (NTS)",
+    ukuranKertas: "A2",
+    disurveyOleh: "SURVEYOR SPARK",
+    tglSurvey: new Date().toISOString().slice(0, 10),
+    diperiksaOleh: "TL TEKNIK ULP",
+    tglPeriksa: new Date().toISOString().slice(0, 10),
+    disetujuiOleh: "ASMAN TEKNIK UP3",
+    tglSetuju: new Date().toISOString().slice(0, 10),
+  },
+  nodes: Array.from({ length: 29 }, (_, i) => {
+    const num = i + 1;
+    const label = `T.${String(num).padStart(2, "0")}`;
+    // Diagonal across 1200x500 (meniru hasil proyeksi GPS 29 tiang diagonal rapat: jarak ~38px)
+    const x = Math.round(80 + (i / 28) * 1040);
+    const y = Math.round(80 + (i / 28) * 360);
+    return {
+      id: `pole_${num}`,
+      type: (num === 1 ? "tiang-existing" : "tiang-tm") as any,
+      x,
+      y,
+      label,
+      tinggiTiang: 12,
+      kekuatanTiang: num === 1 || num === 29 ? 350 : 200,
+      materialTiang: "Beton" as const,
+      posisiTiang: num === 1 || num === 29 ? "Ujung" : "Tumpu",
+      konstruksi: num === 1 || num === 29 ? "A3" : num % 2 === 0 ? "A1" : "C1",
+    };
+  }),
+  edges: Array.from({ length: 28 }, (_, i) => {
+    const num = i + 1;
+    return {
+      id: `edge_${num}_${num + 1}`,
+      type: "kabel-tm" as const,
+      fromNodeId: `pole_${num}`,
+      toNodeId: `pole_${num + 1}`,
+      lengthM: 50,
+      jenisJaringan: "SUTM",
+      konduktorJenis: "AAAC/S",
+      kondukturUkuran: 70,
+    };
+  }),
+  obstacles: [],
+};
+
 const STORAGE_KEY = "spark_schematic_v1";
 
 export default function SchematicWorkspace({ onSwitchToMap, projectId }: Props) {
@@ -364,6 +492,7 @@ export default function SchematicWorkspace({ onSwitchToMap, projectId }: Props) 
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [mapSyncData, setMapSyncData] = useState<SparkMapSyncPayload | null>(null);
   const [syncToast, setSyncToast] = useState<string | null>(null);
+  const [undoCandidate, setUndoCandidate] = useState<SchematicData | null>(null);
 
   const canvasRef = useRef<SchematicCanvasRef>(null);
 
@@ -433,9 +562,6 @@ export default function SchematicWorkspace({ onSwitchToMap, projectId }: Props) 
 
   // Muat template preset
   const handleLoadPresetElevate = () => {
-    if (schematic.nodes.length > 0 && !confirm("Muat preset contoh PB ELEVATE 197 kVA? Gambar kanvas saat ini akan ditimpa.")) {
-      return;
-    }
     const defaultSurvey = getDefaultSurveyData(PRESET_ELEVATE_197KVA.kop);
     defaultSurvey.kop.namaPekerjaan = PRESET_ELEVATE_197KVA.kop.namaPekerjaan;
     defaultSurvey.kop.nomorGambar = PRESET_ELEVATE_197KVA.kop.nomorGambar;
@@ -445,6 +571,68 @@ export default function SchematicWorkspace({ onSwitchToMap, projectId }: Props) 
     };
     setSchematic(presetWithSurvey);
     setSurveyData(defaultSurvey);
+  };
+
+  const handleLoadPreset13Tiang = () => {
+    const defaultSurvey = getDefaultSurveyData(PRESET_13_TIANG_600M.kop);
+    defaultSurvey.kop.namaPekerjaan = PRESET_13_TIANG_600M.kop.namaPekerjaan;
+    defaultSurvey.kop.nomorGambar = PRESET_13_TIANG_600M.kop.nomorGambar;
+    const presetWithSurvey: SchematicData = {
+      ...PRESET_13_TIANG_600M,
+      surveyData: defaultSurvey,
+      surveyForm: defaultSurvey,
+    };
+    setSchematic(presetWithSurvey);
+    setSurveyData(defaultSurvey);
+  };
+
+  const handleLoadPreset29Tiang = () => {
+    const defaultSurvey = getDefaultSurveyData(PRESET_29_TIANG_DIAGONAL.kop);
+    defaultSurvey.kop.namaPekerjaan = PRESET_29_TIANG_DIAGONAL.kop.namaPekerjaan;
+    defaultSurvey.kop.nomorGambar = PRESET_29_TIANG_DIAGONAL.kop.nomorGambar;
+    const presetWithSurvey: SchematicData = {
+      ...PRESET_29_TIANG_DIAGONAL,
+      surveyData: defaultSurvey,
+      surveyForm: defaultSurvey,
+    };
+    setSchematic(presetWithSurvey);
+    setSurveyData(defaultSurvey);
+  };
+
+  // Handler Rapikan Layout (Single Line Diagram) - Task 3 & 4
+  const handleTidyLayout = () => {
+    if (!schematic.nodes || schematic.nodes.length === 0) {
+      alert("Tidak ada tiang di kanvas untuk dirapikan.");
+      return;
+    }
+
+    // Catat ke history Undo kanvas
+    if (canvasRef.current) {
+      canvasRef.current.pushHistoryState(schematic);
+    }
+    const previousSnapshot = schematic;
+    const tidied = tidySchematicLayout(schematic);
+    setSchematic(tidied);
+    setUndoCandidate(previousSnapshot);
+    setSyncToast(`✨ Layout berhasil dirapikan ke Single Line Diagram (${tidied.nodes.length} tiang).`);
+    setTimeout(() => {
+      setSyncToast(null);
+    }, 7000);
+  };
+
+  // Handler Batalkan Rapikan Layout (Opsi Batalkan - Task 3)
+  const handleCancelTidy = () => {
+    if (undoCandidate) {
+      if (canvasRef.current) {
+        canvasRef.current.pushHistoryState(schematic);
+      }
+      setSchematic(undoCandidate);
+      setUndoCandidate(null);
+      setSyncToast("Layout skematik dikembalikan ke susunan sebelumnya.");
+      setTimeout(() => {
+        setSyncToast(null);
+      }, 3500);
+    }
   };
 
   // Reset kanvas
@@ -527,15 +715,24 @@ export default function SchematicWorkspace({ onSwitchToMap, projectId }: Props) 
 
   // Export Survey Modal Handler with Out-of-Frame Warning
   const handleOpenExportSurvey = () => {
-    const outsideCount = schematic.nodes.filter(
-      (n) => n.x < 0 || n.x > DRAWING_FRAME.WIDTH || n.y < 0 || n.y > DRAWING_FRAME.HEIGHT
-    ).length;
+    const pagination = calculatePagination({
+      schematic,
+      orientation: schematic.surveyForm?.orientation || "landscape",
+      scaleOption: schematic.surveyForm?.paginationScale || "auto",
+      manualPageFrames: schematic.surveyForm?.manualPageFrames,
+    });
 
-    if (outsideCount > 0) {
-      const proceed = confirm(
-        `⚠️ Peringatan Sebelum Export:\n\nTerdapat ${outsideCount} aset yang berada di luar batas frame gambar (${DRAWING_FRAME.WIDTH} × ${DRAWING_FRAME.HEIGHT} px).\n\nObjek di luar frame ini TIDAK AKAN masuk ke dalam lembar cetak hasil export.\n\nTetap lanjutkan export?`
-      );
-      if (!proceed) return;
+    if (pagination.totalPages <= 1) {
+      const outsideCount = schematic.nodes.filter(
+        (n) => n.x < 0 || n.x > DRAWING_FRAME.WIDTH || n.y < 0 || n.y > DRAWING_FRAME.HEIGHT
+      ).length;
+
+      if (outsideCount > 0) {
+        const proceed = confirm(
+          `⚠️ Peringatan Sebelum Export:\n\nTerdapat ${outsideCount} aset yang berada di luar batas frame gambar (${DRAWING_FRAME.WIDTH} × ${DRAWING_FRAME.HEIGHT} px).\n\nObjek di luar frame ini TIDAK AKAN masuk ke dalam lembar cetak hasil export.\n\nTetap lanjutkan export?`
+        );
+        if (!proceed) return;
+      }
     }
 
     setIsSurveyExportModalOpen(true);
@@ -572,12 +769,12 @@ export default function SchematicWorkspace({ onSwitchToMap, projectId }: Props) 
             </div>
           </div>
 
-          <div className="hidden lg:flex items-center gap-2 pl-4 border-l border-slate-800">
+          <div className="hidden 2xl:flex items-center gap-2 pl-4 border-l border-slate-800">
             <input
               type="text"
               value={schematic.kop.namaPekerjaan}
               onChange={(e) => handleUpdateKop({ namaPekerjaan: e.target.value })}
-              className="bg-slate-900 hover:bg-slate-850 border border-slate-700/80 rounded-lg px-3 py-1 text-xs text-slate-200 font-semibold focus:border-amber-400 outline-none w-72 transition"
+              className="bg-slate-900 hover:bg-slate-850 border border-slate-700/80 rounded-lg px-3 py-1 text-xs text-slate-200 font-semibold focus:border-amber-400 outline-none w-56 transition"
               title="Nama Pekerjaan (tersimpan di Kop)"
               placeholder="Nama Pekerjaan / Proyek..."
             />
@@ -597,6 +794,24 @@ export default function SchematicWorkspace({ onSwitchToMap, projectId }: Props) 
               <span className="hidden md:inline">Preset 197 kVA</span>
             </button>
             <button
+              id="btn-preset-13-tiang"
+              onClick={handleLoadPreset13Tiang}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-amber-300 hover:text-white bg-amber-950/40 hover:bg-amber-900/60 border border-amber-500/50 transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+              title="Muat contoh skematik jaringan panjang 13 Tiang / 600m (Uji Paginasi A2)"
+            >
+              <span>⚡</span>
+              <span className="hidden md:inline">13 Tiang</span>
+            </button>
+            <button
+              id="btn-preset-29-tiang"
+              onClick={handleLoadPreset29Tiang}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-cyan-300 hover:text-white bg-cyan-950/40 hover:bg-cyan-900/60 border border-cyan-500/50 transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+              title="Muat contoh skematik 29 Tiang Diagonal Rapat (Uji Kasus Bug & Auto-Rapikan Layout)"
+            >
+              <span>⚡</span>
+              <span className="hidden md:inline">29 Tiang (Bug Ref)</span>
+            </button>
+            <button
               onClick={handleResetCanvas}
               className="p-1.5 rounded-lg text-xs text-slate-400 hover:text-red-400 hover:bg-slate-800/80 transition cursor-pointer"
               title="Bersihkan Kanvas"
@@ -604,6 +819,17 @@ export default function SchematicWorkspace({ onSwitchToMap, projectId }: Props) 
               🗑️
             </button>
           </div>
+
+          {/* Tombol Rapikan Layout (Task 3 & 4) */}
+          <button
+            id="btn-tidy-layout"
+            onClick={handleTidyLayout}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+            title="Rapikan tata letak rantai tiang menjadi Single Line Diagram NTS berjarak seragam & rapi (Task 3 & 4)"
+          >
+            <span>✨</span>
+            <span>Rapikan Layout</span>
+          </button>
 
           {/* Tombol Sinkron dari Peta */}
           <button
@@ -655,6 +881,7 @@ export default function SchematicWorkspace({ onSwitchToMap, projectId }: Props) 
 
           {/* Export Form Gambar Survei A2 Button */}
           <button
+            id="btn-export-survey-modal"
             onClick={handleOpenExportSurvey}
             className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-500 text-white transition flex items-center gap-1.5 cursor-pointer shadow-sm"
             title="Export Form Resmi Gambar Survei UP3 Kupang (A2 PDF/PNG)"
@@ -793,11 +1020,20 @@ export default function SchematicWorkspace({ onSwitchToMap, projectId }: Props) 
         />
       )}
 
-      {/* ─── Toast Notifikasi Sinkronisasi ─── */}
+      {/* ─── Toast Notifikasi Sinkronisasi & Auto-Tidy ─── */}
       {syncToast && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-blue-600 text-white px-4 py-2.5 rounded-xl shadow-2xl font-bold text-xs flex items-center gap-2 animate-in fade-in slide-in-from-top-2 border border-blue-400">
-          <span>🔄</span>
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-2xl font-bold text-xs flex items-center gap-3 animate-in fade-in slide-in-from-top-2 border border-amber-500/80">
+          <span>✨</span>
           <span>{syncToast}</span>
+          {undoCandidate && (
+            <button
+              id="btn-cancel-tidy-layout"
+              onClick={handleCancelTidy}
+              className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs font-black transition cursor-pointer shadow-xs ml-2"
+            >
+              Batalkan
+            </button>
+          )}
         </div>
       )}
     </div>

@@ -6,6 +6,8 @@ import type { SurveyKopData } from "../../../types/schematic";
 interface Props {
   kop?: SurveyKopData;
   className?: string;
+  pageIndex?: number;
+  totalPages?: number;
 }
 
 /**
@@ -17,8 +19,9 @@ interface Props {
  * - Kolom Kanan: Titik Koordinat, Nomor Gambar, Revisi, Halaman, Tanggal
  * - 3 Kolom Persetujuan (DISETUJUI / STAFF TEKNIK / Nama)
  */
-export default function SurveyKop({ kop, className = "" }: Props) {
+export default function SurveyKop({ kop, className = "", pageIndex, totalPages }: Props) {
   const k = kop;
+  const halamanStr = pageIndex && totalPages ? `${pageIndex} / ${totalPages}` : k?.halaman || "1 / 1";
 
   const dayaLamaStr = k?.dayaLama ? `${k.dayaLama} kVA (Daya Lama)` : "000 kVA (Daya Lama)";
   const dayaBaruStr = k?.dayaBaru ? `${k.dayaBaru} kVA (Daya Baru)` : "000 kVA (Daya Baru)";
@@ -111,7 +114,7 @@ export default function SurveyKop({ kop, className = "" }: Props) {
           </div>
           <div className="grid grid-cols-[85px_1fr] gap-x-1">
             <span className="font-semibold text-slate-800">Halaman</span>
-            <span>: {k?.halaman || "1 / 1"}</span>
+            <span>: {halamanStr}</span>
           </div>
           <div className="grid grid-cols-[85px_1fr] gap-x-1">
             <span className="font-semibold text-slate-800">Tanggal</span>

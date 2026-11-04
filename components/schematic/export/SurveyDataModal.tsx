@@ -6,6 +6,7 @@ import type {
   BebanJalurRow,
   TeganganPangkalRow,
 } from "../../../types/schematic";
+import { compressImageBase64 } from "../../../lib/exportSurveySheet";
 
 interface Props {
   open: boolean;
@@ -123,16 +124,17 @@ export default function SurveyDataModal({
     }
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const result = e.target?.result as string;
+      const compressed = (await compressImageBase64(result, 1200, 0.8)) || result;
       if (key === "customLogoUrl") {
-        onChange({ ...surveyData, customLogoUrl: result });
+        onChange({ ...surveyData, customLogoUrl: compressed });
       } else {
         onChange({
           ...surveyData,
           dokumentasi: {
             ...surveyData.dokumentasi,
-            [key]: result,
+            [key]: compressed,
           },
         });
       }

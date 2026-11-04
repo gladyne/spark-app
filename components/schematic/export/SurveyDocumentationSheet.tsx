@@ -33,6 +33,7 @@ export default function SurveyDocumentationSheet({ surveyData }: Props) {
               src={photoDataUrl}
               alt={caption}
               className="w-full h-full object-contain"
+              crossOrigin="anonymous"
             />
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center text-slate-300">

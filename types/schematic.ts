@@ -112,6 +112,7 @@ export interface SchematicData {
   obstacles?: SchematicObstacle[];
   kop: SchematicKop;
   surveyData?: SurveyFormData;
+  surveyForm?: SurveyFormData;
 }
 
 export interface LegendaItem {
@@ -218,6 +219,9 @@ export interface SurveyFormData {
   customLogoUrl?: string;
   orientation?: "portrait" | "landscape";
   includeDokumentasi?: boolean;
+  manualPageFrames?: any[];
+  repeatDataBlocksOnAllPages?: boolean;
+  paginationScale?: "auto" | number;
 }
 
 export function getDefaultSurveyData(kop?: Partial<SchematicKop>): SurveyFormData {

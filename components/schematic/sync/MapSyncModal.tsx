@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import type { MapSyncPlan, SparkMapSyncPayload } from "../../../lib/schematic/mapSyncEngine";
 import { buildMapSyncPlan } from "../../../lib/schematic/mapSyncEngine";
+import { tidySchematicLayout } from "../../../lib/schematic/autoLayoutEngine";
 import type { SchematicData } from "../../../types/schematic";
 import { formatRupiah } from "../../sidebar/RabSummaryPanel";
 
@@ -27,6 +28,7 @@ export default function MapSyncModal({
   const [deleteRemovedNodes, setDeleteRemovedNodes] = useState(false);
   const [excludedDeleteNodeIds, setExcludedDeleteNodeIds] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<TabType>("changes");
+  const [autoTidyLayout, setAutoTidyLayout] = useState(true);
 
   if (!open) return null;
 
@@ -55,8 +57,14 @@ export default function MapSyncModal({
   };
 
   const handleConfirmApply = () => {
-    const summaryMsg = `Sinkronisasi berhasil: ${plan.toAddNodes.length} tiang baru, ${plan.toAddEdges.length} kabel, ${plan.toUpdateNodes.length} diperbarui.`;
-    onApply(plan.candidateSchematic, summaryMsg);
+    let finalSchematic = plan.candidateSchematic;
+    let extraMsg = "";
+    if (autoTidyLayout) {
+      finalSchematic = tidySchematicLayout(finalSchematic);
+      extraMsg = " Layout otomatis dirapikan ke Single Line Diagram.";
+    }
+    const summaryMsg = `Sinkronisasi berhasil: ${plan.toAddNodes.length} tiang baru, ${plan.toAddEdges.length} kabel, ${plan.toUpdateNodes.length} diperbarui.${extraMsg}`;
+    onApply(finalSchematic, summaryMsg);
     onClose();
   };
 
@@ -511,7 +519,7 @@ export default function MapSyncModal({
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 border-t border-slate-800 bg-slate-900/90 flex items-center justify-between">
+        <div className="p-4 border-t border-slate-800 bg-slate-900/90 flex items-center justify-between flex-wrap gap-2">
           <button
             type="button"
             onClick={onClose}
@@ -520,15 +528,29 @@ export default function MapSyncModal({
             Batal
           </button>
 
-          <button
-            type="button"
-            onClick={handleConfirmApply}
-            disabled={totalAdded === 0 && totalUpdated === 0 && totalDeleted === 0}
-            className="px-5 py-2.5 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-500 text-white shadow-lg transition flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <span>🔄</span>
-            <span>Terapkan Sinkronisasi</span>
-          </button>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-amber-300 select-none bg-amber-950/40 border border-amber-500/40 px-3 py-1.5 rounded-xl hover:bg-amber-950/60 transition">
+              <input
+                id="toggle-auto-tidy-sync"
+                type="checkbox"
+                checked={autoTidyLayout}
+                onChange={(e) => setAutoTidyLayout(e.target.checked)}
+                className="w-4 h-4 rounded text-amber-500 focus:ring-amber-400 cursor-pointer"
+              />
+              <span>✨ Rapikan layout otomatis (Single Line Diagram)</span>
+            </label>
+
+            <button
+              id="btn-apply-sync-confirm"
+              type="button"
+              onClick={handleConfirmApply}
+              disabled={totalAdded === 0 && totalUpdated === 0 && totalDeleted === 0}
+              className="px-5 py-2.5 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-500 text-white shadow-lg transition flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span>🔄</span>
+              <span>Terapkan Sinkronisasi</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
