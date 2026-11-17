@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  outputFileTracingIncludes: {
+    "/api/tegangan-drop/*": ["./data/tegangan-drop/**/*"],
+  },
 };
 
 export default nextConfig;

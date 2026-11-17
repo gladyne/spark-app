@@ -101,6 +101,12 @@ export default function DashboardPage() {
             >
               📐 Mode Skematik
             </button>
+            <button
+              onClick={() => router.push("/tegangan-drop")}
+              style={{ padding: "6px 12px", background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 8, color: "#fca5a5", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+            >
+              📉 Tegangan Drop
+            </button>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
