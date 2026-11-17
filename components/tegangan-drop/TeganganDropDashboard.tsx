@@ -75,7 +75,7 @@ function reportStatusText(r: PreparedReport): string {
 }
 
 export default function TeganganDropDashboard() {
-  const { data: session, status } = useSession();
+  const { data: session } = useSession();
   const router = useRouter();
 
   const [rawLaporan, setRawLaporan] = useState<LaporanDatasetRaw | null>(null);
@@ -105,10 +105,6 @@ export default function TeganganDropDashboard() {
     setLaporanError(null);
     try {
       const res = await fetch("/api/tegangan-drop/laporan");
-      if (res.status === 401) {
-        router.push("/login");
-        return;
-      }
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
@@ -121,17 +117,13 @@ export default function TeganganDropDashboard() {
     } finally {
       setLaporanLoading(false);
     }
-  }, [router]);
+  }, []);
 
   const loadNetwork = useCallback(async () => {
     setNetworkLoading(true);
     setNetworkError(null);
     try {
       const res = await fetch("/api/tegangan-drop/network");
-      if (res.status === 401) {
-        router.push("/login");
-        return;
-      }
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
@@ -144,18 +136,12 @@ export default function TeganganDropDashboard() {
     } finally {
       setNetworkLoading(false);
     }
-  }, [router]);
+  }, []);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/login");
-      return;
-    }
-    if (status === "authenticated") {
-      loadLaporan();
-      loadNetwork();
-    }
-  }, [status, router, loadLaporan, loadNetwork]);
+    loadLaporan();
+    loadNetwork();
+  }, [loadLaporan, loadNetwork]);
 
   const prepared = useMemo(
     () => (rawLaporan ? prepLaporan(rawLaporan) : null),
@@ -267,7 +253,7 @@ export default function TeganganDropDashboard() {
     }
   };
 
-  if (status === "loading" || (status === "authenticated" && laporanLoading)) {
+  if (laporanLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950 text-sky-400">
         <div className="text-base font-semibold animate-pulse">
@@ -276,8 +262,6 @@ export default function TeganganDropDashboard() {
       </div>
     );
   }
-
-  if (status === "unauthenticated") return null;
 
   if (laporanError || !prepared || !kpi || !rawLaporan) {
     return (
@@ -354,16 +338,28 @@ export default function TeganganDropDashboard() {
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-300">
-              👤 {session?.user?.name}
-            </span>
-            <button
-              type="button"
-              onClick={() => signOut({ callbackUrl: "/login" })}
-              className="rounded-lg border border-red-500/30 bg-red-500/15 px-3 py-1.5 text-xs font-semibold text-red-200 hover:bg-red-500/25 cursor-pointer"
-            >
-              Keluar
-            </button>
+            {session?.user ? (
+              <>
+                <span className="text-xs text-slate-300">
+                  👤 {session.user.name}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => signOut({ callbackUrl: "/login" })}
+                  className="rounded-lg border border-red-500/30 bg-red-500/15 px-3 py-1.5 text-xs font-semibold text-red-200 hover:bg-red-500/25 cursor-pointer"
+                >
+                  Keluar
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => router.push("/login")}
+                className="rounded-lg border border-blue-500/40 bg-blue-500/20 px-3 py-1.5 text-xs font-semibold text-blue-200 hover:bg-blue-500/30 cursor-pointer"
+              >
+                Masuk
+              </button>
+            )}
           </div>
         </div>
       </header>

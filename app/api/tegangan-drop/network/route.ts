@@ -1,17 +1,10 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { readFile } from "fs/promises";
 import path from "path";
-import { authOptions } from "../../auth/[...nextauth]/route";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   try {
     const baseDir = path.join(process.cwd(), "data", "tegangan-drop");
     const [jtrRaw, garduRaw, jtmRaw] = await Promise.all([
@@ -28,7 +21,7 @@ export async function GET() {
       },
       {
         headers: {
-          "Cache-Control": "private, max-age=300",
+          "Cache-Control": "public, max-age=300",
         },
       }
     );
